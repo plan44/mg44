@@ -333,37 +333,67 @@ static size_t json_api_call(char *messageBuf, size_t maxAnswerBytes)
 static int begin_request(struct mg_connection *conn)
 {
   #define MESSAGE_MAX_SIZE 4096
-  char *message = malloc(MESSAGE_MAX_SIZE);
+  char *message;
+  char *p;
+  const char *q, *qvar;
+  int firstvar;
+  size_t i;
   size_t message_length = 0;
   size_t n = strnlen(jsonApiPath, MAX_API_OPT_CHARS);
   if (n>0 && strncmp(mg_get_request_info(conn)->uri, jsonApiPath, n)==0) {
+    message = malloc(MESSAGE_MAX_SIZE);
     // create pure JSON request
-    if (strcmp(mg_get_request_info(conn)->request_method,"GET")==0) {
-      // get, just send GET operation
-      // { "method" : "GET", "uri" : "/myuri" }
-      message = malloc(MESSAGE_MAX_SIZE);
-      message_length = snprintf(
-        message, MESSAGE_MAX_SIZE,
-        "{ \"method\":\"%s\", \"uri\":\"%s\" }\n",
-        mg_get_request_info(conn)->request_method,
-        mg_get_request_info(conn)->uri+n // rest of URI
-      );
+    // { "method" : "GET", "uri" : "/myuri" }
+    // { "method" : "POST", "uri" : "/myuri", "data" : <{ JSON payload }>}
+    message_length = snprintf(
+      message, MESSAGE_MAX_SIZE,
+      "{ \"method\":\"%s\", \"uri\":\"%s\"",
+      mg_get_request_info(conn)->request_method,
+      mg_get_request_info(conn)->uri+n // rest of URI
+    );
+    // check query variables
+    q = mg_get_request_info(conn)->query_string;
+    if (q && *q) {
+      message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,", \"query_params\": {");
+      firstvar = 1;
+      // parse variables
+      while (q && *q) {
+        // find name end
+        qvar = q; // name start
+        while (*q && *q!='=' && *q!='&') q++; // name end
+        // add name and begin of string
+        if (!firstvar)
+          message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,", ");
+        message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,"\"%.*s\": ", (int)(q-qvar), qvar);
+        firstvar = 0;
+        // check value
+        if (*q=='=') {
+          // has value
+          message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,"\""); // string lead-in
+          qvar = ++q; // beginning of valie
+          while (*q && *q!='&') q++; // search end of value
+          i = mg_url_decode(qvar, (int)(q-qvar), message+message_length, (int)(MESSAGE_MAX_SIZE-message_length), 0);
+          if (i>0) message_length += i;
+          message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,"\""); // string lead-out
+        }
+        else {
+          // no value
+          message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,"null");
+        }
+        if (*q) q++; // skip var separator
+      }
+      // end of query params
+      message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length," }");
     }
-    else if (
+    // add data if PUT or POST
+    if (
       strcmp(mg_get_request_info(conn)->request_method, "POST")==0 ||
       strcmp(mg_get_request_info(conn)->request_method, "PUT")==0
     ) {
       // put or post
-      // { "method" : "POST", "uri" : "/myuri", "data" : <{ JSON payload }>}
-      // print message lead-in
-      message_length = snprintf(
-        message, MESSAGE_MAX_SIZE,
-        "{ \"method\":\"%s\", \"uri\":\"%s\", \"data\": ",
-        mg_get_request_info(conn)->request_method,
-        mg_get_request_info(conn)->uri+n // rest of URI
-      );
+      message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,", \"data\": ");
       // get POST/PUT payload data
-      char *p = message+message_length;
+      p = message+message_length;
       size_t n = mg_read(conn, p, MESSAGE_MAX_SIZE-message_length-1);
       size_t payloadLen = n;
       // replace all whitespace by actual space chars (eliminating line feeds)
@@ -374,12 +404,10 @@ static int begin_request(struct mg_connection *conn)
         --n;
       }
       message_length += payloadLen;
-      message_length += snprintf(
-        p, MESSAGE_MAX_SIZE-message_length-1,
-        " }\n"
-      );
     }
-    // json request
+    // end of JSON object + LF
+    message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length," }\n");
+    // send json request, receive answer
     message_length = json_api_call(message, MESSAGE_MAX_SIZE);
     message[message_length]=0; // terminate
     // return JSON answer
@@ -390,7 +418,8 @@ static int begin_request(struct mg_connection *conn)
       "Content-Type: text/html\r\n\r\n%s",
       message_length, message
     );
-
+    // done
+    free(message); message = NULL;
     // Returning non-zero tells mongoose that our function has replied to
     // the client, and mongoose should not send client any more data.
     return 1;
