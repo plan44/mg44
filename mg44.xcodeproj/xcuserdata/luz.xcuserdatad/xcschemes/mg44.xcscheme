@@ -62,6 +62,10 @@
             argument = "-listening_ports 8080"
             isEnabled = "YES">
          </CommandLineArgument>
+         <CommandLineArgument
+            argument = "-json_path /json -json_host localhost -json_port 8090"
+            isEnabled = "YES">
+         </CommandLineArgument>
       </CommandLineArguments>
       <AdditionalOptions>
       </AdditionalOptions>

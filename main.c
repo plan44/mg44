@@ -36,6 +36,19 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+// unix I/O and network
+#include <sys/types.h>
+#include <fcntl.h>
+#include <sys/select.h>
+#include <sys/param.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <netinet/in.h>
+
+
+
 #define DIRSEP '/'
 
 #define MAX_OPTIONS 40
@@ -45,6 +58,13 @@ static int exit_flag;
 static char server_name[40];        // Set by init_server_name()
 static char config_file[PATH_MAX];  // Set by process_command_line_arguments()
 static struct mg_context *ctx;      // Set by start_mongoose()
+
+// JSON REST API passtrough
+#define MAX_API_OPT_CHARS 40
+static char jsonApiPath[MAX_API_OPT_CHARS]; // path prefix for JSON API passthrough
+static char jsonApiHost[MAX_API_OPT_CHARS]; // host name/IP for JSON API passthrough
+static char jsonApiService[MAX_API_OPT_CHARS]; // service name or port number for JSON API pass through
+
 
 #if !defined(CONFIG_FILE)
 #define CONFIG_FILE "mongoose.conf"
@@ -120,19 +140,32 @@ static void set_option(char **options, const char *name, const char *value) {
     verify_document_root(value);
   }
 
-  for (i = 0; i < MAX_OPTIONS - 3; i++) {
-    if (options[i] == NULL) {
-      options[i] = sdup(name);
-      options[i + 1] = sdup(value);
-      options[i + 2] = NULL;
-      break;
+  // check p44 API passthrough options
+  if (strcmp(name, "json_path")==0) {
+    strncpy(jsonApiPath, value, MAX_API_OPT_CHARS);
+  }
+  else if (strcmp(name, "json_host")==0) {
+    strncpy(jsonApiHost, value, MAX_API_OPT_CHARS);
+  }
+  else if (strcmp(name, "json_port")==0) {
+    strncpy(jsonApiService, value, MAX_API_OPT_CHARS);
+  }
+  else {
+    // standard mongoose option
+    for (i = 0; i < MAX_OPTIONS - 3; i++) {
+      if (options[i] == NULL) {
+        options[i] = sdup(name);
+        options[i + 1] = sdup(value);
+        options[i + 2] = NULL;
+        break;
+      }
+    }
+    if (i == MAX_OPTIONS - 3) {
+      die("%s", "Too many options specified");
     }
   }
-
-  if (i == MAX_OPTIONS - 3) {
-    die("%s", "Too many options specified");
-  }
 }
+
 
 static void process_command_line_arguments(char *argv[], char **options) {
   char line[MAX_CONF_FILE_LINE_SIZE], opt[sizeof(line)], val[sizeof(line)], *p;
@@ -211,10 +244,173 @@ static int log_message(const struct mg_connection *conn, const char *message) {
   return 0;
 }
 
+
+
+int connectSocket(const char *aHost, const char *aServiceOrPort)
+{
+  // try to resolve host name
+  int res;
+  int socketFD = -1;
+  struct addrinfo hint;
+  struct addrinfo *addressInfoList;
+  struct addrinfo *ai = NULL;
+  memset(&hint, 0, sizeof(hint));
+  hint.ai_flags = 0; // no flags
+  hint.ai_family = AF_INET;
+  hint.ai_socktype = SOCK_STREAM;
+  hint.ai_protocol = 0;
+  res = getaddrinfo(aHost, aServiceOrPort, &hint, &addressInfoList);
+  if (res==0) {
+    // now try all addresses in the list
+    ai = addressInfoList;
+    while (ai) {
+      socketFD = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+      if (socketFD!=-1) {
+        // usable address found, socket created
+        // - initiate connection
+        res = connect(socketFD, ai->ai_addr, ai->ai_addrlen);
+        if (res==0) {
+          // connection open
+          break;
+        }
+      }
+      // advance to next address
+      ai = ai->ai_next;
+    }
+    // forget the address info
+    freeaddrinfo(addressInfoList);
+  }
+  return socketFD;
+}
+
+
+
+static size_t json_api_call(char *messageBuf, size_t maxAnswerBytes)
+{
+//  fprintf(stderr, "%s\n", messageBuf);
+//  //
+//  strcpy(messageBuf,"{ \"Error\": \"This is not a real error\" }\n");
+//  return strlen(messageBuf);
+  size_t answerSize = 0;
+  size_t res,n;
+  int done;
+  char *p;
+  int fd = connectSocket(jsonApiHost, jsonApiService);
+  if (fd>=0) {
+    // write
+    write(fd, messageBuf, strlen(messageBuf));
+    // read
+    p = messageBuf+answerSize;
+    done = 0;
+    while(answerSize<maxAnswerBytes && !done) {
+      res = read(fd, p, maxAnswerBytes-answerSize);
+      if (res>0) {
+        // got data
+        n = 0;
+        // - check for LF in byte stream: end of JSON answer
+        while (n<res) {
+          ++n;
+          if (*p=='\n' || *p=='\r') {
+            done = 1;
+            break;
+          }
+          ++p;
+        }
+        answerSize+=n;
+      }
+      else {
+        // done
+        break;
+      }
+    }
+    close(fd);
+  }
+  return answerSize;
+}
+
+
+
+static int begin_request(struct mg_connection *conn)
+{
+  #define MESSAGE_MAX_SIZE 4096
+  char *message = malloc(MESSAGE_MAX_SIZE);
+  size_t message_length = 0;
+  size_t n = strnlen(jsonApiPath, MAX_API_OPT_CHARS);
+  if (n>0 && strncmp(mg_get_request_info(conn)->uri, jsonApiPath, n)==0) {
+    // create pure JSON request
+    if (strcmp(mg_get_request_info(conn)->request_method,"GET")==0) {
+      // get, just send GET operation
+      // { "method" : "GET", "uri" : "/myuri" }
+      message = malloc(MESSAGE_MAX_SIZE);
+      message_length = snprintf(
+        message, MESSAGE_MAX_SIZE,
+        "{ \"method\":\"%s\", \"uri\":\"%s\" }\n",
+        mg_get_request_info(conn)->request_method,
+        mg_get_request_info(conn)->uri+n // rest of URI
+      );
+    }
+    else if (
+      strcmp(mg_get_request_info(conn)->request_method, "POST")==0 ||
+      strcmp(mg_get_request_info(conn)->request_method, "PUT")==0
+    ) {
+      // put or post
+      // { "method" : "POST", "uri" : "/myuri", "data" : <{ JSON payload }>}
+      // print message lead-in
+      message_length = snprintf(
+        message, MESSAGE_MAX_SIZE,
+        "{ \"method\":\"%s\", \"uri\":\"%s\", \"data\": ",
+        mg_get_request_info(conn)->request_method,
+        mg_get_request_info(conn)->uri+n // rest of URI
+      );
+      // get POST/PUT payload data
+      char *p = message+message_length;
+      size_t n = mg_read(conn, p, MESSAGE_MAX_SIZE-message_length-1);
+      size_t payloadLen = n;
+      // replace all whitespace by actual space chars (eliminating line feeds)
+      while (n>0) {
+        if (isspace(*p))
+          *p = ' ';
+        ++p;
+        --n;
+      }
+      message_length += payloadLen;
+      message_length += snprintf(
+        p, MESSAGE_MAX_SIZE-message_length-1,
+        " }\n"
+      );
+    }
+    // json request
+    message_length = json_api_call(message, MESSAGE_MAX_SIZE);
+    message[message_length]=0; // terminate
+    // return JSON answer
+    // Show HTML form.
+    mg_printf(
+      conn, "HTTP/1.0 200 OK\r\n"
+      "Content-Length: %ld\r\n"
+      "Content-Type: text/html\r\n\r\n%s",
+      message_length, message
+    );
+
+    // Returning non-zero tells mongoose that our function has replied to
+    // the client, and mongoose should not send client any more data.
+    return 1;
+
+  }
+  // Returning zero tells mongoose that our function has NOT replied to
+  // the client, and mongoose should process the request
+  return 0;
+}
+
+
 static void start_mongoose(int argc, char *argv[]) {
   struct mg_callbacks callbacks;
   char *options[MAX_OPTIONS];
   int i;
+
+  // p44 API passthrough option init
+  jsonApiHost[0] = 0;
+  jsonApiPath[0] = 0;
+  jsonApiService[0] = 0;
 
   // Edit passwords file if -A option is specified
   if (argc > 1 && !strcmp(argv[1], "-A")) {
@@ -239,7 +435,11 @@ static void start_mongoose(int argc, char *argv[]) {
 
   /* Start Mongoose */
   memset(&callbacks, 0, sizeof(callbacks));
+  // Install log callback
   callbacks.log_message = &log_message;
+  // Install request handler callback to catch API calls
+  callbacks.begin_request = &begin_request;
+
   ctx = mg_start(&callbacks, NULL, (const char **) options);
   for (i = 0; options[i] != NULL; i++) {
     free(options[i]);
