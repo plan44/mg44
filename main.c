@@ -344,7 +344,7 @@ static int begin_request(struct mg_connection *conn)
     message = malloc(MESSAGE_MAX_SIZE);
     // create pure JSON request
     // { "method" : "GET", "uri" : "/myuri" }
-    // { "method" : "POST", "uri" : "/myuri", "data" : <{ JSON payload }>}
+    // { "method" : "POST", "uri" : "/myuri", ["uri_params":{}] "data" : <{ JSON payload }>}
     message_length = snprintf(
       message, MESSAGE_MAX_SIZE,
       "{ \"method\":\"%s\", \"uri\":\"%s\"",
@@ -354,7 +354,7 @@ static int begin_request(struct mg_connection *conn)
     // check query variables
     q = mg_get_request_info(conn)->query_string;
     if (q && *q) {
-      message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,", \"query_params\": {");
+      message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,", \"uri_params\": {");
       firstvar = 1;
       // parse variables
       while (q && *q) {
