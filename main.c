@@ -336,7 +336,7 @@ static int begin_request(struct mg_connection *conn)
   char *message;
   char *p;
   const char *q, *qvar;
-  int firstvar;
+  int firstvar, numeric;
   size_t i;
   size_t message_length = 0;
   size_t n = strnlen(jsonApiPath, MAX_API_OPT_CHARS);
@@ -369,12 +369,17 @@ static int begin_request(struct mg_connection *conn)
         // check value
         if (*q=='=') {
           // has value
-          message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,"\""); // string lead-in
-          qvar = ++q; // beginning of valie
-          while (*q && *q!='&') q++; // search end of value
+          qvar = ++q; // beginning of value
+          numeric = 1; // assume pure numeric
+          while (*q && *q!='&') {
+            if (!isdigit(*q) && *q!='.' && *q!='-')
+              numeric = 0; // not pure numeric value
+            q++; // search end of value
+          }
+          if (!numeric) message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,"\""); // string lead-in
           i = mg_url_decode(qvar, (int)(q-qvar), message+message_length, (int)(MESSAGE_MAX_SIZE-message_length), 0);
           if (i>0) message_length += i;
-          message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,"\""); // string lead-out
+          if (!numeric) message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,"\""); // string lead-out
         }
         else {
           // no value
