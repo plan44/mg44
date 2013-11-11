@@ -1,4 +1,7 @@
 *~
 /Debug
 /Release
-*/xcuserdata/
+
+# XCode specifics
+*.xcuserstate
+xcuserdata/

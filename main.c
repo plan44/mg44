@@ -35,6 +35,7 @@
 
 #include <sys/wait.h>
 #include <unistd.h>
+#include <sys/param.h>
 
 // unix I/O and network
 #include <sys/types.h>
@@ -59,11 +60,18 @@ static char server_name[40];        // Set by init_server_name()
 static char config_file[PATH_MAX];  // Set by process_command_line_arguments()
 static struct mg_context *ctx;      // Set by start_mongoose()
 
-// JSON REST API passtrough
+#ifdef __APPLE__
+#define MAX_API_OPT_CHARS 400
+#else
 #define MAX_API_OPT_CHARS 40
+#endif
+// JSON REST API passtrough
 static char jsonApiPath[MAX_API_OPT_CHARS]; // path prefix for JSON API passthrough
 static char jsonApiHost[MAX_API_OPT_CHARS]; // host name/IP for JSON API passthrough
 static char jsonApiService[MAX_API_OPT_CHARS]; // service name or port number for JSON API pass through
+// JSON command line API passtrough
+static char jsonCmdlinePath[MAX_API_OPT_CHARS]; // path prefix for JSON command line passthrough
+static char jsonCmdlineTool[MAX_API_OPT_CHARS]; // full path for command line tool which handles JSON requests
 
 
 #if !defined(CONFIG_FILE)
@@ -141,14 +149,20 @@ static void set_option(char **options, const char *name, const char *value) {
   }
 
   // check p44 API passthrough options
-  if (strcmp(name, "json_path")==0) {
+  if (strcmp(name, "jsonapi_path")==0) {
     strncpy(jsonApiPath, value, MAX_API_OPT_CHARS);
   }
-  else if (strcmp(name, "json_host")==0) {
+  else if (strcmp(name, "jsonapi_host")==0) {
     strncpy(jsonApiHost, value, MAX_API_OPT_CHARS);
   }
-  else if (strcmp(name, "json_port")==0) {
+  else if (strcmp(name, "jsonapi_port")==0) {
     strncpy(jsonApiService, value, MAX_API_OPT_CHARS);
+  }
+  else   if (strcmp(name, "jsoncmd_path")==0) {
+    strncpy(jsonCmdlinePath, value, MAX_API_OPT_CHARS);
+  }
+  else if (strcmp(name, "jsoncmd_tool")==0) {
+    strncpy(jsonCmdlineTool, value, MAX_API_OPT_CHARS);
   }
   else {
     // standard mongoose option
@@ -287,10 +301,6 @@ int connectSocket(const char *aHost, const char *aServiceOrPort)
 
 static size_t json_api_call(char *messageBuf, size_t maxAnswerBytes)
 {
-//  fprintf(stderr, "%s\n", messageBuf);
-//  //
-//  strcpy(messageBuf,"{ \"Error\": \"This is not a real error\" }\n");
-//  return strlen(messageBuf);
   size_t answerSize = 0;
   size_t res,n;
   int done;
@@ -329,6 +339,52 @@ static size_t json_api_call(char *messageBuf, size_t maxAnswerBytes)
 }
 
 
+extern char **environ;
+
+static size_t json_cmdline_call(char *messageBuf, size_t maxAnswerBytes)
+{
+  size_t answerSize = 0;
+	int pid;
+	int answerPipe[2]; /* Child to parent pipe */
+
+	// create a pipe
+	if(pipe(answerPipe)>=0) {
+    // fork the child
+    pid = fork();
+    switch(pid) {
+      case -1:
+        // error forking
+        break;
+      case 0:
+        // Child
+        close(STDOUT_FILENO); // close current stdout
+        dup(answerPipe[1]); // replace it by writing end of pipe
+        close(answerPipe[0]); // close child's reading end of pipe (parent uses it!)
+        char * args[4];
+        args[0] = jsonCmdlineTool;
+        args[1] = "--json";
+        args[2] = messageBuf;
+        args[3] = NULL;
+        execve(jsonCmdlineTool, args, environ); // replace process with new binary/script
+        // should not exit, if it does, we have a problem
+        exit(EXIT_FAILURE);
+      default:
+        // Parent
+        close(answerPipe[1]); // close parent's writing end (child uses it!)
+        ssize_t ret;
+        while ((ret = read(answerPipe[0], messageBuf+answerSize, maxAnswerBytes-answerSize))>0) {
+          answerSize += ret;
+        }
+        close(answerPipe[0]);
+        int status;
+        waitpid(pid, &status, 0);
+    }
+  }
+  return answerSize;
+}
+
+
+
 
 static int begin_request(struct mg_connection *conn)
 {
@@ -339,8 +395,21 @@ static int begin_request(struct mg_connection *conn)
   int firstvar, numeric;
   size_t i;
   size_t message_length = 0;
+  int cmdlineCall = 0;
+  int apiCall = 0;
+  // check for API
   size_t n = strnlen(jsonApiPath, MAX_API_OPT_CHARS);
   if (n>0 && strncmp(mg_get_request_info(conn)->uri, jsonApiPath, n)==0) {
+    apiCall = 1; // is an API call
+  }
+  else {
+    size_t n = strnlen(jsonCmdlinePath, MAX_API_OPT_CHARS);
+    if (n>0 && strncmp(mg_get_request_info(conn)->uri, jsonCmdlinePath, n)==0) {
+      cmdlineCall = 1; // is an API call
+    }
+  }
+  if (apiCall || cmdlineCall) {
+    // JSON call to deliver to a daemon or the commandline
     message = malloc(MESSAGE_MAX_SIZE);
     // create pure JSON request
     // { "method" : "GET", "uri" : "/myuri" }
@@ -412,9 +481,15 @@ static int begin_request(struct mg_connection *conn)
     }
     // end of JSON object + LF
     message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length," }\n");
-    // send json request, receive answer
-    message_length = json_api_call(message, MESSAGE_MAX_SIZE);
-    message[message_length]=0; // terminate
+    if (apiCall) {
+      // send json request, receive answer
+      message_length = json_api_call(message, MESSAGE_MAX_SIZE);
+      message[message_length]=0; // terminate
+    }
+    else if (cmdlineCall) {
+      message_length = json_cmdline_call(message, MESSAGE_MAX_SIZE);
+      message[message_length]=0; // terminate
+    }
     // return JSON answer
     // Show HTML form.
     mg_printf(
