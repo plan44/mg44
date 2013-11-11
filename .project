@@ -3,6 +3,7 @@
 	<name>mg44</name>
 	<comment></comment>
 	<projects>
+		<project>mongoose</project>
 	</projects>
 	<buildSpec>
 		<buildCommand>
