@@ -7,10 +7,27 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		ED3160D9182A2D9F0077B011 /* libmongoose.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = ED3160D6182A2D4E0077B011 /* libmongoose.dylib */; };
 		ED369985178C1B4200376405 /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = ED369984178C1B4200376405 /* main.c */; };
 		ED369987178C1B4200376405 /* mg44.1 in CopyFiles */ = {isa = PBXBuildFile; fileRef = ED369986178C1B4200376405 /* mg44.1 */; };
-		ED369995178C1D0B00376405 /* libmongoose.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = ED369994178C1D0B00376405 /* libmongoose.dylib */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		ED3160D5182A2D4E0077B011 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = ED3160D1182A2D4E0077B011 /* mongoose.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = ED36996C178C1A8200376405;
+			remoteInfo = mongoose;
+		};
+		ED3160D7182A2D920077B011 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = ED3160D1182A2D4E0077B011 /* mongoose.xcodeproj */;
+			proxyType = 1;
+			remoteGlobalIDString = ED36996B178C1A8200376405;
+			remoteInfo = mongoose;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		ED36997F178C1B4200376405 /* CopyFiles */ = {
@@ -26,6 +43,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		ED3160D1182A2D4E0077B011 /* mongoose.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = mongoose.xcodeproj; path = ../libmongoose/mongoose.xcodeproj; sourceTree = "<group>"; };
 		ED369981178C1B4200376405 /* mg44 */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mg44; sourceTree = BUILT_PRODUCTS_DIR; };
 		ED369984178C1B4200376405 /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
 		ED369986178C1B4200376405 /* mg44.1 */ = {isa = PBXFileReference; lastKnownFileType = text.man; path = mg44.1; sourceTree = "<group>"; };
@@ -37,16 +55,25 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				ED369995178C1D0B00376405 /* libmongoose.dylib in Frameworks */,
+				ED3160D9182A2D9F0077B011 /* libmongoose.dylib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		ED3160D2182A2D4E0077B011 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				ED3160D6182A2D4E0077B011 /* libmongoose.dylib */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
 		ED369978178C1B4200376405 = {
 			isa = PBXGroup;
 			children = (
+				ED3160D1182A2D4E0077B011 /* mongoose.xcodeproj */,
 				ED369983178C1B4200376405 /* source */,
 				ED369993178C1CFC00376405 /* libs */,
 				ED369982178C1B4200376405 /* Products */,
@@ -92,6 +119,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				ED3160D8182A2D920077B011 /* PBXTargetDependency */,
 			);
 			name = mg44;
 			productName = mg44;
@@ -117,12 +145,28 @@
 			mainGroup = ED369978178C1B4200376405;
 			productRefGroup = ED369982178C1B4200376405 /* Products */;
 			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = ED3160D2182A2D4E0077B011 /* Products */;
+					ProjectRef = ED3160D1182A2D4E0077B011 /* mongoose.xcodeproj */;
+				},
+			);
 			projectRoot = "";
 			targets = (
 				ED369980178C1B4200376405 /* mg44 */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXReferenceProxy section */
+		ED3160D6182A2D4E0077B011 /* libmongoose.dylib */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.dylib";
+			path = libmongoose.dylib;
+			remoteRef = ED3160D5182A2D4E0077B011 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+/* End PBXReferenceProxy section */
 
 /* Begin PBXSourcesBuildPhase section */
 		ED36997D178C1B4200376405 /* Sources */ = {
@@ -134,6 +178,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		ED3160D8182A2D920077B011 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = mongoose;
+			targetProxy = ED3160D7182A2D920077B011 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		ED369988178C1B4200376405 /* Debug */ = {
