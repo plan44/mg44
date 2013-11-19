@@ -357,9 +357,13 @@ static size_t json_cmdline_call(char *messageBuf, size_t maxAnswerBytes)
         break;
       case 0:
         // Child
-        close(STDOUT_FILENO); // close current stdout
-        dup(answerPipe[1]); // replace it by writing end of pipe
+        dup2(answerPipe[1], STDOUT_FILENO); // replace STDOUT by writing end of pipe
+        close(answerPipe[1]); // release the original descriptor (does NOT really close the file)
         close(answerPipe[0]); // close child's reading end of pipe (parent uses it!)
+        // close all non-std file descriptors
+        int fd = getdtablesize();
+        while (fd-- > 2) close(fd);
+        // exec the command line tool
         char * args[4];
         args[0] = jsonCmdlineTool;
         args[1] = "--json";
