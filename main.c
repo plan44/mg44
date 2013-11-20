@@ -376,12 +376,17 @@ static size_t json_cmdline_call(char *messageBuf, size_t maxAnswerBytes)
         // Parent
         close(answerPipe[1]); // close parent's writing end (child uses it!)
         ssize_t ret;
-        while ((ret = read(answerPipe[0], messageBuf+answerSize, maxAnswerBytes-answerSize))>0) {
+        while (1) {
+          ret = read(answerPipe[0], messageBuf+answerSize, maxAnswerBytes-answerSize);
+          fprintf(stderr,"read(answerPipe) returns %ld\n", ret);
+          if (ret<=0) break;
           answerSize += ret;
         }
         close(answerPipe[0]);
         int status;
+        fprintf(stderr,"waiting for child to die\n");
         waitpid(pid, &status, 0);
+        fprintf(stderr,"child exits with status=%d\n", status);
     }
   }
   return answerSize;
