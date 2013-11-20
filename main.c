@@ -348,45 +348,93 @@ static size_t json_cmdline_call(char *messageBuf, size_t maxAnswerBytes)
 	int answerPipe[2]; /* Child to parent pipe */
 
 	// create a pipe
+  fprintf(stderr,"creating pipe...\n"); fflush(stderr);
 	if(pipe(answerPipe)>=0) {
     // fork the child
+	  fprintf(stderr,"pipe ok, forking process...\n"); fflush(stderr);
     pid = fork();
     switch(pid) {
       case -1:
         // error forking
+        fprintf(stderr,"ERROR forking process %d\n", errno); fflush(stderr);
         break;
       case 0:
         // Child
+        fprintf(stderr,"Child forked\n"); fflush(stderr);
         dup2(answerPipe[1], STDOUT_FILENO); // replace STDOUT by writing end of pipe
         close(answerPipe[1]); // release the original descriptor (does NOT really close the file)
         close(answerPipe[0]); // close child's reading end of pipe (parent uses it!)
         // close all non-std file descriptors
         int fd = getdtablesize();
-        while (fd-- > 2) close(fd);
+        fprintf(stderr,"Highest fd is %d\n", fd); fflush(stderr);
+        //while (fd-- > 2) close(fd);
+        //fprintf(stderr,"All fds>2 closed\n"); fflush(stderr);
         // exec the command line tool
         char * args[4];
         args[0] = jsonCmdlineTool;
         args[1] = "--json";
         args[2] = messageBuf;
         args[3] = NULL;
+        fprintf(stderr,"Calling jommand line tool '%s' now with message = '%s'\n", jsonCmdlineTool, messageBuf); fflush(stderr);
         execve(jsonCmdlineTool, args, environ); // replace process with new binary/script
         // should not exit, if it does, we have a problem
         exit(EXIT_FAILURE);
       default:
         // Parent
         close(answerPipe[1]); // close parent's writing end (child uses it!)
+        // make paren'ts reading end non-blocking so we can wait for child termination AND data on the pipe
+        fprintf(stderr,"parent: making answer pipe non-blocking to read from\n"); fflush(stderr);
+        int flags;
+        if ((flags = fcntl(answerPipe[0], F_GETFL, 0))==-1)
+          flags = 0;
+        fcntl(answerPipe[0], F_SETFL, flags | O_NONBLOCK);
+        fprintf(stderr,"parent: starting to wait for process to die AND read from pipe\n"); fflush(stderr);
         ssize_t ret;
+        int status;
+        pid_t pid2;
+        ret = 0; // no error on pipe yet
+        pid2 = 0; // not terminated yet
         while (1) {
-          ret = read(answerPipe[0], messageBuf+answerSize, maxAnswerBytes-answerSize);
-          fprintf(stderr,"read(answerPipe) returns %ld\n", ret);
-          if (ret<=0) break;
-          answerSize += ret;
+          // try to read data
+          if (ret>=0) {
+            // still open
+            ret = read(answerPipe[0], messageBuf+answerSize, maxAnswerBytes-answerSize);
+            if (ret!=0) {
+              if (errno==EWOULDBLOCK) {
+                // no data, just go on
+                ret = 0; // reset error condition
+              }
+              else {
+                // other error
+                fprintf(stderr,"read(answerPipe[0]) returns %ld, err=%d (%s)\n", ret, errno, strerror(errno)); fflush(stderr);
+              }
+            }
+            if (ret>0) {
+              answerSize += ret;
+            }
+            if (ret==0) {
+              // no more data
+              ret = -1; // simulate error condition
+            }
+          }
+          // check for process termination
+          if (pid<=0) {
+            // still waiting for termination
+            pid2 = waitpid(pid, &status, WNOHANG);
+            if (pid2>0) {
+              fprintf(stderr,"child has terminated\n"); fflush(stderr);
+            }
+          }
+          if (pid2>0 && ret<0) {
+            // terminated and all pipe data read
+            break;
+          }
+          // wait a little
+          sleep(1);
         }
         close(answerPipe[0]);
-        int status;
-        fprintf(stderr,"waiting for child to die\n");
-        waitpid(pid, &status, 0);
-        fprintf(stderr,"child exits with status=%d\n", status);
+        fprintf(stderr,"pipe has ended and child has exited with status=%d\n", status); fflush(stderr);
+        break;
     }
   }
   return answerSize;
