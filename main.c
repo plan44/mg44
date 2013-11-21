@@ -346,6 +346,7 @@ static size_t json_cmdline_call(char *messageBuf, size_t maxAnswerBytes)
   size_t answerSize = 0;
 	int pid;
 	int answerPipe[2]; /* Child to parent pipe */
+  int stderrfd;
 
 	// create a pipe
   fprintf(stderr,"creating pipe...\n"); fflush(stderr);
@@ -360,6 +361,12 @@ static size_t json_cmdline_call(char *messageBuf, size_t maxAnswerBytes)
         break;
       case 0:
         // Child
+        // - send stderr to file
+        stderrfd = open("/tmp/mg44_json_tool_stderr", O_WRONLY+O_APPEND);
+        dup2(stderrfd, STDERR_FILENO); // replace STDERR by temp file
+        close (stderrfd);
+
+
         fprintf(stderr,"Child forked\n"); fflush(stderr);
         dup2(answerPipe[1], STDOUT_FILENO); // replace STDOUT by writing end of pipe
         close(answerPipe[1]); // release the original descriptor (does NOT really close the file)
