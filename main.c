@@ -346,102 +346,66 @@ static size_t json_cmdline_call(char *messageBuf, size_t maxAnswerBytes)
   size_t answerSize = 0;
 	int pid;
 	int answerPipe[2]; /* Child to parent pipe */
-  int stderrfd;
+	int stderrfd;
 
 	// create a pipe
-  fprintf(stderr,"creating pipe...\n"); fflush(stderr);
 	if(pipe(answerPipe)>=0) {
     // fork the child
-	  fprintf(stderr,"pipe ok, forking process...\n"); fflush(stderr);
     pid = fork();
     switch(pid) {
       case -1:
         // error forking
-        fprintf(stderr,"ERROR forking process %d\n", errno); fflush(stderr);
         break;
       case 0:
         // Child
         // - send stderr to file
-        stderrfd = open("/tmp/mg44_json_tool_stderr", O_WRONLY+O_APPEND);
-        dup2(stderrfd, STDERR_FILENO); // replace STDERR by temp file
-        close (stderrfd);
+        stderrfd = open("/tmp/mg44_json_tool_stderr", O_CREAT|O_RDWR|O_APPEND);
+        if (stderrfd<0) {
+          printf("Error opening temp file for stderr: %s\n", strerror(errno));
+        }
+        else {
+          dup2(stderrfd, STDERR_FILENO); // replace STDERR by temp file
+          close (stderrfd);
+        }
 
-
-        fprintf(stderr,"Child forked\n"); fflush(stderr);
         dup2(answerPipe[1], STDOUT_FILENO); // replace STDOUT by writing end of pipe
         close(answerPipe[1]); // release the original descriptor (does NOT really close the file)
         close(answerPipe[0]); // close child's reading end of pipe (parent uses it!)
         // close all non-std file descriptors
         int fd = getdtablesize();
-        fprintf(stderr,"Highest fd is %d\n", fd); fflush(stderr);
-        //while (fd-- > 2) close(fd);
-        //fprintf(stderr,"All fds>2 closed\n"); fflush(stderr);
+        while (fd>STDERR_FILENO) close(fd--);
+
+
+//        // %%%%
+//        char * args[4];
+//        args[0] = "/bin/sh";
+//        args[1] = "-c";
+//        args[2] = "ls -la /proc/$$/fd";
+//        args[3] = NULL;
+//        execve(args[0], args, environ); // replace process with new binary/script
+
         // exec the command line tool
-        char * args[4];
+        char * args[6];
         args[0] = jsonCmdlineTool;
-        args[1] = "--json";
-        args[2] = messageBuf;
-        args[3] = NULL;
-        fprintf(stderr,"Calling jommand line tool '%s' now with message = '%s'\n", jsonCmdlineTool, messageBuf); fflush(stderr);
+        args[1] = "-l";
+        args[2] = "7";
+        args[3] = "--json";
+        args[4] = messageBuf;
+        args[5] = NULL;
         execve(jsonCmdlineTool, args, environ); // replace process with new binary/script
+
         // should not exit, if it does, we have a problem
         exit(EXIT_FAILURE);
       default:
         // Parent
         close(answerPipe[1]); // close parent's writing end (child uses it!)
-        // make paren'ts reading end non-blocking so we can wait for child termination AND data on the pipe
-        fprintf(stderr,"parent: making answer pipe non-blocking to read from\n"); fflush(stderr);
-        int flags;
-        if ((flags = fcntl(answerPipe[0], F_GETFL, 0))==-1)
-          flags = 0;
-        fcntl(answerPipe[0], F_SETFL, flags | O_NONBLOCK);
-        fprintf(stderr,"parent: starting to wait for process to die AND read from pipe\n"); fflush(stderr);
         ssize_t ret;
-        int status;
-        pid_t pid2;
-        ret = 0; // no error on pipe yet
-        pid2 = 0; // not terminated yet
-        while (1) {
-          // try to read data
-          if (ret>=0) {
-            // still open
-            ret = read(answerPipe[0], messageBuf+answerSize, maxAnswerBytes-answerSize);
-            if (ret!=0) {
-              if (errno==EWOULDBLOCK) {
-                // no data, just go on
-                ret = 0; // reset error condition
-              }
-              else {
-                // other error
-                fprintf(stderr,"read(answerPipe[0]) returns %ld, err=%d (%s)\n", ret, errno, strerror(errno)); fflush(stderr);
-              }
-            }
-            if (ret>0) {
-              answerSize += ret;
-            }
-            if (ret==0) {
-              // no more data
-              ret = -1; // simulate error condition
-            }
-          }
-          // check for process termination
-          if (pid<=0) {
-            // still waiting for termination
-            pid2 = waitpid(pid, &status, WNOHANG);
-            if (pid2>0) {
-              fprintf(stderr,"child has terminated\n"); fflush(stderr);
-            }
-          }
-          if (pid2>0 && ret<0) {
-            // terminated and all pipe data read
-            break;
-          }
-          // wait a little
-          sleep(1);
+        while ((ret = read(answerPipe[0], messageBuf+answerSize, maxAnswerBytes-answerSize))>0) {
+          answerSize += ret;
         }
         close(answerPipe[0]);
-        fprintf(stderr,"pipe has ended and child has exited with status=%d\n", status); fflush(stderr);
-        break;
+        int status;
+        waitpid(pid, &status, 0);
     }
   }
   return answerSize;
