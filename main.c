@@ -346,7 +346,6 @@ static size_t json_cmdline_call(char *messageBuf, size_t maxAnswerBytes)
   size_t answerSize = 0;
 	int pid;
 	int answerPipe[2]; /* Child to parent pipe */
-	int stderrfd;
 
 	// create a pipe
 	if(pipe(answerPipe)>=0) {
@@ -358,42 +357,19 @@ static size_t json_cmdline_call(char *messageBuf, size_t maxAnswerBytes)
         break;
       case 0:
         // Child
-        // - send stderr to file
-        stderrfd = open("/tmp/mg44_json_tool_stderr", O_CREAT|O_RDWR|O_APPEND);
-        if (stderrfd<0) {
-          printf("Error opening temp file for stderr: %s\n", strerror(errno));
-        }
-        else {
-          dup2(stderrfd, STDERR_FILENO); // replace STDERR by temp file
-          close (stderrfd);
-        }
-
         dup2(answerPipe[1], STDOUT_FILENO); // replace STDOUT by writing end of pipe
         close(answerPipe[1]); // release the original descriptor (does NOT really close the file)
         close(answerPipe[0]); // close child's reading end of pipe (parent uses it!)
         // close all non-std file descriptors
         int fd = getdtablesize();
         while (fd>STDERR_FILENO) close(fd--);
-
-
-//        // %%%%
-//        char * args[4];
-//        args[0] = "/bin/sh";
-//        args[1] = "-c";
-//        args[2] = "ls -la /proc/$$/fd";
-//        args[3] = NULL;
-//        execve(args[0], args, environ); // replace process with new binary/script
-
         // exec the command line tool
-        char * args[6];
+        char * args[4];
         args[0] = jsonCmdlineTool;
-        args[1] = "-l";
-        args[2] = "7";
-        args[3] = "--json";
-        args[4] = messageBuf;
-        args[5] = NULL;
+        args[1] = "--json";
+        args[2] = messageBuf;
+        args[3] = NULL;
         execve(jsonCmdlineTool, args, environ); // replace process with new binary/script
-
         // should not exit, if it does, we have a problem
         exit(EXIT_FAILURE);
       default:
