@@ -396,7 +396,7 @@ static int begin_request(struct mg_connection *conn)
   char *message;
   char *p;
   const char *q, *qvar;
-  int firstvar, numeric;
+  int firstvar, numeric, numcnt, seendot;
   size_t i;
   size_t message_length = 0;
   int cmdlineCall = 0;
@@ -444,9 +444,13 @@ static int begin_request(struct mg_connection *conn)
           // has value
           qvar = ++q; // beginning of value
           numeric = 1; // assume pure numeric
+          numcnt = 0;
+          seendot = 0;
           while (*q && *q!='&') {
-            if (!isdigit(*q) && *q!='.' && *q!='-')
+            if (!(isdigit(*q) || (*q=='.' && !seendot) || (*q=='-' && numcnt==0)))
               numeric = 0; // not pure numeric value
+            if (*q=='.') seendot=1;
+            numcnt++;
             q++; // search end of value
           }
           if (!numeric) message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,"\""); // string lead-in
@@ -485,6 +489,7 @@ static int begin_request(struct mg_connection *conn)
     }
     // end of JSON object + LF
     message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length," }\n");
+    printf("json = %s\n", message);
     if (apiCall) {
       // send json request, receive answer
       message_length = json_api_call(message, MESSAGE_MAX_SIZE);
