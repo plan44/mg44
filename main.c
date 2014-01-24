@@ -504,7 +504,7 @@ static int begin_request(struct mg_connection *conn)
     mg_printf(
       conn, "HTTP/1.0 200 OK\r\n"
       "Content-Length: %ld\r\n"
-      "Content-Type: text/html\r\n\r\n%s",
+      "Content-Type: text/json\r\n\r\n%s",
       message_length, message
     );
     // done
