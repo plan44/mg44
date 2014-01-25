@@ -392,7 +392,7 @@ static size_t json_cmdline_call(char *messageBuf, size_t maxAnswerBytes)
 
 static int begin_request(struct mg_connection *conn)
 {
-  #define MESSAGE_MAX_SIZE 4096
+  #define MESSAGE_MAX_SIZE 8192
   char *message;
   char *p;
   const char *q, *qvar;
