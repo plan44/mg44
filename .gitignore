@@ -1,7 +1,27 @@
 *~
-/Debug
-/Release
+
+# DigiESP/Eclipse CDT specifics
+Debug/
+Release/
+
+# Automake build specifics
+build/
 
 # XCode specifics
 *.xcuserstate
 xcuserdata/
+
+# Autotools specifics
+*.o
+Makefile
+Makefile.in
+autom4te.cache/
+aclocal.m4
+config.h.in
+config.log
+config.status
+configure
+configure_aux/
+.dirstamp
+.deps/
+stamp-h1

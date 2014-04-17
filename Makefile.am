@@ -5,9 +5,7 @@ bin_PROGRAMS = mg44
 
 mg44_CXXFLAGS = $(JSONC_CFLAGS) $(PTHREAD_CFLAGS)
 
-mg44_LDADD = $(JSONC_LIBS) $(PTHREAD_LIBS)
+mg44_LDADD = $(PTHREAD_LIBS) -lmongoose -ljson-c -lcrypt
 
 mg44_SOURCES = \
-  mongoose.c \
-  mongoose.h \
   main.c
