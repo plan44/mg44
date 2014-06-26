@@ -298,8 +298,7 @@ int connectSocket(const char *aHost, const char *aServiceOrPort)
 }
 
 
-
-static size_t json_api_call(char *messageBuf, size_t maxAnswerBytes)
+static size_t json_api_call(char **messageBufP, size_t maxAnswerBytes)
 {
   size_t answerSize = 0;
   size_t res,n;
@@ -308,11 +307,16 @@ static size_t json_api_call(char *messageBuf, size_t maxAnswerBytes)
   int fd = connectSocket(jsonApiHost, jsonApiService);
   if (fd>=0) {
     // write
-    write(fd, messageBuf, strlen(messageBuf));
+    write(fd, *messageBufP, strlen(*messageBufP));
     // read
-    p = messageBuf+answerSize;
     done = 0;
-    while(answerSize<maxAnswerBytes && !done) {
+    while(!done) {
+      if (answerSize>=maxAnswerBytes) {
+        // enlarge buffer
+        maxAnswerBytes += maxAnswerBytes/2; // increase by half of current size
+        *messageBufP = realloc(*messageBufP, maxAnswerBytes);
+      }
+      p = *messageBufP+answerSize;
       res = read(fd, p, maxAnswerBytes-answerSize);
       if (res>0) {
         // got data
@@ -341,7 +345,7 @@ static size_t json_api_call(char *messageBuf, size_t maxAnswerBytes)
 
 extern char **environ;
 
-static size_t json_cmdline_call(char *messageBuf, size_t maxAnswerBytes)
+static size_t json_cmdline_call(char **messageBufP, size_t maxAnswerBytes)
 {
   size_t answerSize = 0;
 	int pid;
@@ -367,7 +371,7 @@ static size_t json_cmdline_call(char *messageBuf, size_t maxAnswerBytes)
         char * args[4];
         args[0] = jsonCmdlineTool;
         args[1] = "--json";
-        args[2] = messageBuf;
+        args[2] = *messageBufP;
         args[3] = NULL;
         execve(jsonCmdlineTool, args, environ); // replace process with new binary/script
         // should not exit, if it does, we have a problem
@@ -376,7 +380,7 @@ static size_t json_cmdline_call(char *messageBuf, size_t maxAnswerBytes)
         // Parent
         close(answerPipe[1]); // close parent's writing end (child uses it!)
         ssize_t ret;
-        while ((ret = read(answerPipe[0], messageBuf+answerSize, maxAnswerBytes-answerSize))>0) {
+        while ((ret = read(answerPipe[0], *messageBufP+answerSize, maxAnswerBytes-answerSize))>0) {
           answerSize += ret;
         }
         close(answerPipe[0]);
@@ -392,7 +396,7 @@ static size_t json_cmdline_call(char *messageBuf, size_t maxAnswerBytes)
 
 static int begin_request(struct mg_connection *conn)
 {
-  #define MESSAGE_MAX_SIZE 8192
+  #define MESSAGE_DEF_SIZE 2048
   char *message;
   char *p;
   const char *q, *qvar;
@@ -414,12 +418,12 @@ static int begin_request(struct mg_connection *conn)
   }
   if (apiCall || cmdlineCall) {
     // JSON call to deliver to a daemon or the commandline
-    message = malloc(MESSAGE_MAX_SIZE);
+    message = malloc(MESSAGE_DEF_SIZE);
     // create pure JSON request
     // { "method" : "GET", "uri" : "/myuri" }
     // { "method" : "POST", "uri" : "/myuri", ["uri_params":{}] "data" : <{ JSON payload }>}
     message_length = snprintf(
-      message, MESSAGE_MAX_SIZE,
+      message, MESSAGE_DEF_SIZE,
       "{ \"method\":\"%s\", \"uri\":\"%s\"",
       mg_get_request_info(conn)->request_method,
       mg_get_request_info(conn)->uri+n // rest of URI
@@ -427,7 +431,7 @@ static int begin_request(struct mg_connection *conn)
     // check query variables
     q = mg_get_request_info(conn)->query_string;
     if (q && *q) {
-      message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,", \"uri_params\": {");
+      message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,", \"uri_params\": {");
       firstvar = 1;
       // parse variables
       while (q && *q) {
@@ -436,8 +440,8 @@ static int begin_request(struct mg_connection *conn)
         while (*q && *q!='=' && *q!='&') q++; // name end
         // add name and begin of string
         if (!firstvar)
-          message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,", ");
-        message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,"\"%.*s\": ", (int)(q-qvar), qvar);
+          message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,", ");
+        message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"\"%.*s\": ", (int)(q-qvar), qvar);
         firstvar = 0;
         // check value
         if (*q=='=') {
@@ -453,19 +457,19 @@ static int begin_request(struct mg_connection *conn)
             numcnt++;
             q++; // search end of value
           }
-          if (!numeric) message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,"\""); // string lead-in
-          i = mg_url_decode(qvar, (int)(q-qvar), message+message_length, (int)(MESSAGE_MAX_SIZE-message_length), 0);
+          if (!numeric) message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"\""); // string lead-in
+          i = mg_url_decode(qvar, (int)(q-qvar), message+message_length, (int)(MESSAGE_DEF_SIZE-message_length), 0);
           if (i>0) message_length += i;
-          if (!numeric) message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,"\""); // string lead-out
+          if (!numeric) message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"\""); // string lead-out
         }
         else {
           // no value
-          message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,"null");
+          message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"null");
         }
         if (*q) q++; // skip var separator
       }
       // end of query params
-      message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length," }");
+      message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length," }");
     }
     // add data if PUT or POST
     if (
@@ -473,10 +477,10 @@ static int begin_request(struct mg_connection *conn)
       strcmp(mg_get_request_info(conn)->request_method, "PUT")==0
     ) {
       // put or post
-      message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length,", \"data\": ");
+      message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,", \"data\": ");
       // get POST/PUT payload data
       p = message+message_length;
-      size_t n = mg_read(conn, p, MESSAGE_MAX_SIZE-message_length-1);
+      size_t n = mg_read(conn, p, MESSAGE_DEF_SIZE-message_length-1);
       size_t payloadLen = n;
       // replace all whitespace by actual space chars (eliminating line feeds)
       while (n>0) {
@@ -488,15 +492,15 @@ static int begin_request(struct mg_connection *conn)
       message_length += payloadLen;
     }
     // end of JSON object + LF
-    message_length += snprintf(message+message_length, MESSAGE_MAX_SIZE-message_length," }\n");
+    message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length," }\n");
     printf("json = %s\n", message);
     if (apiCall) {
       // send json request, receive answer
-      message_length = json_api_call(message, MESSAGE_MAX_SIZE);
+      message_length = json_api_call(&message, MESSAGE_DEF_SIZE);
       message[message_length]=0; // terminate
     }
     else if (cmdlineCall) {
-      message_length = json_cmdline_call(message, MESSAGE_MAX_SIZE);
+      message_length = json_cmdline_call(&message, MESSAGE_DEF_SIZE);
       message[message_length]=0; // terminate
     }
     // return JSON answer
