@@ -49,6 +49,31 @@
 #include <netinet/in.h>
 
 
+#include <time.h>
+#include <pthread.h>
+// copied block from mongoose.c to allow debug traces in main
+#ifdef DEBUG_TRACE
+#undef DEBUG_TRACE
+#define DEBUG_TRACE(x)
+#else
+#if defined(DEBUG)
+#define DEBUG_TRACE(x) do { \
+  flockfile(stdout); \
+  printf("*** %lu.%p.%s.%d: ", \
+         (unsigned long) time(NULL), (void *) pthread_self(), \
+         __func__, __LINE__); \
+  printf x; \
+  putchar('\n'); \
+  fflush(stdout); \
+  funlockfile(stdout); \
+} while (0)
+#else
+#define DEBUG_TRACE(x)
+#endif // DEBUG
+#endif // DEBUG_TRACE
+
+
+
 
 #define DIRSEP '/'
 
@@ -303,8 +328,11 @@ static size_t json_api_call(char **messageBufP, size_t maxAnswerBytes)
   size_t answerSize = 0;
   size_t res,n;
   int done;
+  int isJson = 1; // assume JSON
   char *p;
+  DEBUG_TRACE(("- entered json_api_call"));
   int fd = connectSocket(jsonApiHost, jsonApiService);
+  DEBUG_TRACE(("- got connection"));
   if (fd>=0) {
     // write
     write(fd, *messageBufP, strlen(*messageBufP));
@@ -318,18 +346,25 @@ static size_t json_api_call(char **messageBufP, size_t maxAnswerBytes)
       }
       p = *messageBufP+answerSize;
       res = read(fd, p, maxAnswerBytes-answerSize);
+      DEBUG_TRACE(("- read: res=%ld, maxAnswerBytes=%ld, answerSize=%ld", res, maxAnswerBytes, answerSize));
+      if (answerSize==0 && res>0 && (uint8_t)p[0]>=0x80)
+        isJson=0; // first byte not ASCII -> can't be JSON
       if (res>0) {
         // got data
-        n = 0;
-        // - check for LF in byte stream: end of JSON answer
-        while (n<res) {
-          ++n;
-          if (*p=='\n' || *p=='\r') {
-            done = 1;
-            break;
+        if (isJson) {
+          n = 0;
+          // - check for LF in byte stream: end of JSON answer
+          while (n<res) {
+            ++n;
+            if (*p=='\n' || *p=='\r') {
+              done = 1;
+              break;
+            }
+            ++p;
           }
-          ++p;
         }
+        else
+          n=res; // just take entire data
         answerSize+=n;
       }
       else {
@@ -338,6 +373,9 @@ static size_t json_api_call(char **messageBufP, size_t maxAnswerBytes)
       }
     }
     close(fd);
+  }
+  else {
+    DEBUG_TRACE(("Error: could not open JSON API socket: %s", strerror(errno)));
   }
   return answerSize;
 }
@@ -493,7 +531,7 @@ static int begin_request(struct mg_connection *conn)
     }
     // end of JSON object + LF
     message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length," }\n");
-    printf("json = %s\n", message);
+    DEBUG_TRACE(("json = %s", message));
     if (apiCall) {
       // send json request, receive answer
       message_length = json_api_call(&message, MESSAGE_DEF_SIZE);
@@ -503,14 +541,30 @@ static int begin_request(struct mg_connection *conn)
       message_length = json_cmdline_call(&message, MESSAGE_DEF_SIZE);
       message[message_length]=0; // terminate
     }
-    // return JSON answer
-    // Show HTML form.
+    // return JSON or PNG answer
+    // - check for PNG header: 0x89504E47 = 0x89 'P' 'N' 'G'
+    const char *contentType;
+    if (
+      message_length>4 &&
+      (uint8_t)message[0]==0x89 &&
+      (uint8_t)message[1]==0x50 &&
+      (uint8_t)message[2]==0x4E &&
+      (uint8_t)message[3]==0x47
+    ) {
+      // is PNG
+      contentType = "image/png";
+    }
+    else {
+      // assume JSON
+      contentType = "application/json";
+    }
     mg_printf(
       conn, "HTTP/1.0 200 OK\r\n"
       "Content-Length: %ld\r\n"
-      "Content-Type: application/json\r\n\r\n%s",
-      message_length, message
+      "Content-Type: %s\r\n\r\n",
+      message_length, contentType
     );
+    mg_write(conn, message, message_length);
     // done
     free(message); message = NULL;
     // Returning non-zero tells mongoose that our function has replied to
