@@ -420,6 +420,11 @@ static size_t json_cmdline_call(char **messageBufP, size_t maxAnswerBytes)
         ssize_t ret;
         while ((ret = read(answerPipe[0], *messageBufP+answerSize, maxAnswerBytes-answerSize))>0) {
           answerSize += ret;
+          if (answerSize>=maxAnswerBytes) {
+            // buffer full, assume we'll get more, expand
+            maxAnswerBytes += maxAnswerBytes/2; // increase by half of current size
+            *messageBufP = realloc(*messageBufP, maxAnswerBytes);
+          }
         }
         close(answerPipe[0]);
         int status;
@@ -451,7 +456,7 @@ static int begin_request(struct mg_connection *conn)
   else {
     size_t n = strnlen(jsonCmdlinePath, MAX_API_OPT_CHARS);
     if (n>0 && strncmp(mg_get_request_info(conn)->uri, jsonCmdlinePath, n)==0) {
-      cmdlineCall = 1; // is an API call
+      cmdlineCall = 1; // is a command line call
     }
   }
   if (apiCall || cmdlineCall) {

@@ -45,7 +45,7 @@
 /* Begin PBXFileReference section */
 		ED3160D1182A2D4E0077B011 /* mongoose.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = mongoose.xcodeproj; path = ../libmongoose/mongoose.xcodeproj; sourceTree = "<group>"; };
 		ED369981178C1B4200376405 /* mg44 */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mg44; sourceTree = BUILT_PRODUCTS_DIR; };
-		ED369984178C1B4200376405 /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
+		ED369984178C1B4200376405 /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; lineEnding = 0; path = main.c; sourceTree = "<group>"; };
 		ED369986178C1B4200376405 /* mg44.1 */ = {isa = PBXFileReference; lastKnownFileType = text.man; path = mg44.1; sourceTree = "<group>"; };
 		ED369994178C1D0B00376405 /* libmongoose.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libmongoose.dylib; path = "../../../../../../Library/Developer/Xcode/DerivedData/mg44-broynpmjlhimixcrexchdfabdrkl/Build/Products/Debug/libmongoose.dylib"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
