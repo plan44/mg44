@@ -440,11 +440,11 @@ static size_t json_cmdline_call(char **messageBufP, size_t maxAnswerBytes)
 static int begin_request(struct mg_connection *conn)
 {
   #define MESSAGE_DEF_SIZE 2048
-  char *message;
-  char *p;
+  char c, *message;
+  char *p, *valbuf;
   const char *q, *qvar;
   int firstvar, numeric, numcnt, seendot;
-  size_t i;
+  size_t i, value_length;
   size_t message_length = 0;
   int cmdlineCall = 0;
   int apiCall = 0;
@@ -500,10 +500,44 @@ static int begin_request(struct mg_connection *conn)
             numcnt++;
             q++; // search end of value
           }
-          if (!numeric) message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"\""); // string lead-in
-          i = mg_url_decode(qvar, (int)(q-qvar), message+message_length, (int)(MESSAGE_DEF_SIZE-message_length), 0);
-          if (i>0) message_length += i;
-          if (!numeric) message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"\""); // string lead-out
+          // process value
+          value_length = q-qvar;
+          if (numeric) {
+            // just copy
+            i = mg_url_decode(qvar, (int)value_length, message+message_length, (int)(MESSAGE_DEF_SIZE-message_length), 0);
+            if (i>0) message_length += i;
+          }
+          else {
+            // string, quote and escape
+            message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"\""); // string lead-in
+            // decode into intermediate buffer
+            valbuf = malloc(value_length*2); // worst case is that every char needs to be escaped
+            if (valbuf) {
+              i = mg_url_decode(qvar, (int)value_length, valbuf, (int)value_length*2, 0);
+              if (i>0) {
+                // now process decoded string and escape for JSON if needed
+                for (p=valbuf; i>0; --i, ++p) {
+                  if (message_length>=MESSAGE_DEF_SIZE-2) break; // no room for at least 2 chars any more
+                  c = *p;
+                  if (*p=='\\' || *p=='"' || *p<0x20) {
+                    // need escaping
+                    message[message_length++] = '\\';
+                    // catch those that can't be escaped as-is
+                    switch (*p) {
+                      case 0x08 : c = 'b'; break; // backspace
+                      case 0x09 : c = 't'; break; // tab
+                      case 0x0A : c = 'n'; break; // linefeed
+                      case 0x0C : c = 'f'; break; // formfeed
+                      case 0x0D : c = 'r'; break; // carriage return
+                    }
+                  }
+                  message[message_length++] = c;
+                }
+              }
+              free(valbuf);
+            }
+          }
+          message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"\""); // string lead-out
         }
         else {
           // no value
