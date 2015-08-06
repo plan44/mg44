@@ -536,8 +536,8 @@ static int begin_request(struct mg_connection *conn)
               }
               free(valbuf);
             }
+            message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"\""); // string lead-out
           }
-          message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"\""); // string lead-out
         }
         else {
           // no value
