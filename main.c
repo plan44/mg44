@@ -124,10 +124,11 @@ static void show_usage_and_exit(void) {
   const char **names;
   int i;
 
-  fprintf(stderr, "Mongoose version %s (c) Sergey Lyubka, built on %s\n",
+  fprintf(stderr, "Mongoose version %s (c) Sergey Lyubka, built on %s, with luz additions\n",
           mg_version(), __DATE__);
   fprintf(stderr, "Usage:\n");
   fprintf(stderr, "  mongoose -A <htpasswd_file> <realm> <user> <passwd>\n");
+  fprintf(stderr, "  mongoose -D <method> <host> <doc> [<contenttype> <body>] (https test)\n");
   fprintf(stderr, "  mongoose [config_file]\n");
   fprintf(stderr, "  mongoose [-option value ...]\n");
   fprintf(stderr, "\nOPTIONS:\n");
@@ -635,6 +636,60 @@ static void start_mongoose(int argc, char *argv[]) {
     exit(mg_modify_passwords_file(argv[2], argv[3], argv[4], argv[5]) ?
          EXIT_SUCCESS : EXIT_FAILURE);
   }
+
+  // Open Download connection
+  //  1 2      3    4   5           6
+  // -D method host doc contenttype body
+  if (argc >= 5 && !strcmp(argv[1], "-D")) {
+    struct mg_connection *mgConn = NULL; // mongoose connection
+    const size_t ebufSz = 300;
+    char ebuf[ebufSz];
+    // is a request which sends data in the HTTP message body (e.g. POST)
+    mgConn = mg_download(
+      argv[3], // host
+      443,
+      1,
+      ebuf, ebufSz,
+      "%s %s HTTP/1.1\r\n"
+      "Host: %s\r\n"
+      "Content-Type: %s; charset=UTF-8\r\n"
+      "Content-Length: %ld\r\n"
+      "\r\n"
+      "%s",
+      argv[2], // method
+      argv[4], // doc
+      argv[3], // host
+      argc>5 ? argv[5] : "text/html", // content type
+      argc>6 ? strlen(argv[6]) : 0, // body len
+      argc>6 ? argv[6] : "" // body
+    );
+    if (!mgConn) {
+      printf("Mongoose error: %s\n", ebuf);
+    }
+    else {
+      printf("Connection OK\n");
+      const size_t bufferSz = 2048;
+      uint8_t buffer[bufferSz];
+      while (1) {
+        ssize_t res = mg_read(mgConn, buffer, bufferSz);
+        if (res==0) {
+          // connection has closed, all bytes read
+          break;
+        }
+        else if (res<0) {
+          // read error
+          printf("Read error: %s\n", strerror(errno));
+          break;
+        }
+        else {
+          fwrite(buffer, res, 1, stdout);
+        }
+      }
+      mg_close_connection(mgConn);
+    }
+    exit(0);
+  }
+
 
   // Show usage if -h or --help options are specified
   if (argc == 2 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help"))) {
