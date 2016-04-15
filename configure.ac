@@ -45,6 +45,7 @@ AM_COND_IF([P44_BUILD_RPI], [], [
 AC_CHECK_LIB(m, atan2, [], [AC_MSG_ERROR([Could not find math lib (m) with atan2])])
 AC_CHECK_LIB(rt, clock_gettime, [], [AC_MSG_ERROR([Could not find rt lib with clock_gettime])])
 AC_CHECK_LIB(dl, dlopen, [], [AC_MSG_ERROR([Could not find libdl with dlopen])])
+AC_CHECK_LIB(pthread, pthread_create, [], [AC_MSG_ERROR([Could not find libpthread with pthread_create])])
 
 AM_COND_IF([P44_BUILD_RPI], [], [
   dnl # can check libs only if not P44_BUILD_RPI
