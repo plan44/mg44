@@ -85,11 +85,15 @@ static char server_name[40];        // Set by init_server_name()
 static char config_file[PATH_MAX];  // Set by process_command_line_arguments()
 static struct mg_context *ctx;      // Set by start_mongoose()
 
+static char csrf_token_seed[9];     // random string for this server instance
+
 #ifdef __APPLE__
 #define MAX_API_OPT_CHARS 400
 #else
 #define MAX_API_OPT_CHARS 40
 #endif
+// JSON CSRF protection
+static char jsonCSRFPath[MAX_API_OPT_CHARS]; // path prefix for JSON CSRF token generator
 // JSON REST API passtrough
 static char jsonApiPath[MAX_API_OPT_CHARS]; // path prefix for JSON API passthrough
 static char jsonApiHost[MAX_API_OPT_CHARS]; // host name/IP for JSON API passthrough
@@ -175,7 +179,10 @@ static void set_option(char **options, const char *name, const char *value) {
   }
 
   // check p44 API passthrough options
-  if (strcmp(name, "jsonapi_path")==0) {
+  if (strcmp(name, "jsoncsrf_path")==0) {
+    strncpy(jsonCSRFPath, value, MAX_API_OPT_CHARS);
+  }
+  else if (strcmp(name, "jsonapi_path")==0) {
     strncpy(jsonApiPath, value, MAX_API_OPT_CHARS);
   }
   else if (strcmp(name, "jsonapi_host")==0) {
@@ -436,32 +443,72 @@ static size_t json_cmdline_call(char **messageBufP, size_t maxAnswerBytes)
 }
 
 
+static void get_csrf_token(struct mg_connection *conn, char *tok)
+{
+  char remote[9];
+  sprintf(remote, "%8lX", mg_get_request_info(conn)->remote_ip);
+  mg_md5(
+    tok, // will get MD5 token
+    mg_get_request_info(conn)->remote_user ? mg_get_request_info(conn)->remote_user : "anonymous", // user
+    remote, // remote party
+    csrf_token_seed, // random ID unique to this mg44 instance
+    NULL // terminator
+  );
+}
+
+
+static void request_csrf_token(struct mg_connection *conn)
+{
+  // create and return csrf protection token
+  // - must be unique to the authenticated user
+  // - must be unique to this client's IP
+  // - must be randomly unique to this running mg44 process, so knowing this hashing function does not help
+  char tok[33];
+  get_csrf_token(conn, tok);
+  mg_printf(
+    conn, "HTTP/1.0 200 OK\r\n"
+    "Content-Length: %ld\r\n"
+    "Content-Type: text/plain\r\n\r\n\"%s\"",
+    strlen(tok)+2,
+    tok
+  );
+}
+
 
 
 static int begin_request(struct mg_connection *conn)
 {
   #define MESSAGE_DEF_SIZE 2048
+  char refTok[33];
   char c, *message;
   char *p, *valbuf;
   const char *q, *qvar;
   int firstvar, numeric, numcnt, seendot;
-  size_t i, value_length;
+  size_t i, name_length, value_length;
   size_t message_length = 0;
   int cmdlineCall = 0;
   int apiCall = 0;
-  // check for API
-  size_t n = strnlen(jsonApiPath, MAX_API_OPT_CHARS);
-  if (n>0 && strncmp(mg_get_request_info(conn)->uri, jsonApiPath, n)==0) {
+  int csrfValPending = 0;
+  // check for csrf protection token call
+  size_t prefix_length = strnlen(jsonCSRFPath, MAX_API_OPT_CHARS);
+  if (prefix_length>0 && strncmp(mg_get_request_info(conn)->uri, jsonCSRFPath, prefix_length)==0) {
+    // create and return csrf protection token
+    request_csrf_token(conn);
+    return 1; // request done
+  }
+  // check for API calls
+  prefix_length = strnlen(jsonApiPath, MAX_API_OPT_CHARS);
+  if (prefix_length>0 && strncmp(mg_get_request_info(conn)->uri, jsonApiPath, prefix_length)==0) {
     apiCall = 1; // is an API call
   }
   else {
-    size_t n = strnlen(jsonCmdlinePath, MAX_API_OPT_CHARS);
-    if (n>0 && strncmp(mg_get_request_info(conn)->uri, jsonCmdlinePath, n)==0) {
+    prefix_length = strnlen(jsonCmdlinePath, MAX_API_OPT_CHARS);
+    if (prefix_length>0 && strncmp(mg_get_request_info(conn)->uri, jsonCmdlinePath, prefix_length)==0) {
       cmdlineCall = 1; // is a command line call
     }
   }
   if (apiCall || cmdlineCall) {
-    // JSON call to deliver to a daemon or the commandline
+    // JSON API call to deliver to a daemon or the commandline
     message = malloc(MESSAGE_DEF_SIZE);
     // create pure JSON request
     // { "method" : "GET", "uri" : "/myuri" }
@@ -470,8 +517,9 @@ static int begin_request(struct mg_connection *conn)
       message, MESSAGE_DEF_SIZE,
       "{ \"method\":\"%s\", \"uri\":\"%s\"",
       mg_get_request_info(conn)->request_method,
-      mg_get_request_info(conn)->uri+n // rest of URI
+      mg_get_request_info(conn)->uri+prefix_length // rest of URI
     );
+    csrfValPending = *jsonCSRFPath!=0; // pending if jsonCSRFPath is set
     // check query variables
     q = mg_get_request_info(conn)->query_string;
     if (q && *q) {
@@ -485,11 +533,21 @@ static int begin_request(struct mg_connection *conn)
         // add name and begin of string
         if (!firstvar)
           message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,", ");
-        message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"\"%.*s\": ", (int)(q-qvar), qvar);
+        name_length = (int)(q-qvar);
+        message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"\"%.*s\": ", (int)name_length, qvar);
         firstvar = 0;
         // check value
         if (*q=='=') {
           // has value
+          // check for csrf token
+          if (csrfValPending && strncmp("rqvaltok", qvar, name_length)==0) {
+            // is token, check it
+            get_csrf_token(conn, refTok);
+            if (strncmp(refTok, q+1, strlen(refTok))==0) {
+              // matching token found
+              csrfValPending = 0; // allowed to run the request
+            }
+          }
           qvar = ++q; // beginning of value
           numeric = 1; // assume pure numeric
           numcnt = 0;
@@ -572,7 +630,15 @@ static int begin_request(struct mg_connection *conn)
     // end of JSON object + LF
     message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length," }\n");
     DEBUG_TRACE(("json = %s", message));
-    if (apiCall) {
+    // abort call if csrf token is not ok
+    if (csrfValPending) {
+      // abort
+      DEBUG_TRACE(("csrf token does not match"));
+      free(message); message = NULL;
+      mg_printf(conn, "HTTP/1.0 403 Forbidden\r\n\r\n<html><body><h1>forbidden</h1></body></html>");
+      return 1; // request handled
+    }
+    else if (apiCall) {
       // send json request, receive answer
       message_length = json_api_call(&message, MESSAGE_DEF_SIZE);
       message[message_length]=0; // terminate
@@ -722,6 +788,8 @@ static void start_mongoose(int argc, char *argv[]) {
 
 
 int main(int argc, char *argv[]) {
+  srand((int)argv[0]); // memory pointer as seed
+  sprintf(csrf_token_seed, "%08lX", (long)rand());
   init_server_name();
   start_mongoose(argc, argv);
   printf("%s started on port(s) %s with web root [%s]\n",
