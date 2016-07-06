@@ -132,7 +132,7 @@
 		ED369979178C1B4200376405 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 0500;
+				LastUpgradeCheck = 0800;
 				ORGANIZATIONNAME = plan44.ch;
 			};
 			buildConfigurationList = ED36997C178C1B4200376405 /* Build configuration list for PBXProject "mg44" */;
@@ -203,11 +203,14 @@
 				CLANG_WARN_ENUM_CONVERSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu99;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"DEBUG=1",
@@ -241,12 +244,15 @@
 				CLANG_WARN_ENUM_CONVERSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu99;
 				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
@@ -261,6 +267,10 @@
 		ED36998B178C1B4200376405 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"NO_CGI=1",
+				);
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/../libmongoose";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
@@ -273,6 +283,10 @@
 		ED36998C178C1B4200376405 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"NO_CGI=1",
+				);
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/../libmongoose";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
