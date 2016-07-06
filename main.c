@@ -80,12 +80,17 @@
 #define MAX_OPTIONS 40
 #define MAX_CONF_FILE_LINE_SIZE (8 * 1024)
 
+#define MAX_UPLOAD_PATH_LENGTH 100
+
+
 static int exit_flag;
 static char server_name[40];        // Set by init_server_name()
 static char config_file[PATH_MAX];  // Set by process_command_line_arguments()
 static struct mg_context *ctx;      // Set by start_mongoose()
 
 static char csrf_token_seed[9];     // random string for this server instance
+static char lastUploadedFilePath[MAX_UPLOAD_PATH_LENGTH]; // path to last file uploaded
+
 
 #ifdef __APPLE__
 #define MAX_API_OPT_CHARS 400
@@ -101,6 +106,8 @@ static char jsonApiService[MAX_API_OPT_CHARS]; // service name or port number fo
 // JSON command line API passtrough
 static char jsonCmdlinePath[MAX_API_OPT_CHARS]; // path prefix for JSON command line passthrough
 static char jsonCmdlineTool[MAX_API_OPT_CHARS]; // full path for command line tool which handles JSON requests
+static char jsonUploadPath[MAX_API_OPT_CHARS]; // path prefix for JSON command with previous file upload
+static char uploadDir[MAX_API_OPT_CHARS]; // directory where to save uploaded files
 
 
 #if !defined(CONFIG_FILE)
@@ -193,6 +200,12 @@ static void set_option(char **options, const char *name, const char *value) {
   }
   else   if (strcmp(name, "jsoncmd_path")==0) {
     strncpy(jsonCmdlinePath, value, MAX_API_OPT_CHARS);
+  }
+  else   if (strcmp(name, "jsonupload_path")==0) {
+    strncpy(jsonUploadPath, value, MAX_API_OPT_CHARS);
+  }
+  else   if (strcmp(name, "uploaddir")==0) {
+    strncpy(uploadDir, value, MAX_API_OPT_CHARS);
   }
   else if (strcmp(name, "jsoncmd_tool")==0) {
     strncpy(jsonCmdlineTool, value, MAX_API_OPT_CHARS);
@@ -476,6 +489,12 @@ static void request_csrf_token(struct mg_connection *conn)
 
 
 
+static void upload_occurred(struct mg_connection *conn, const char *file_name)
+{
+  strncpy(lastUploadedFilePath, file_name, MAX_UPLOAD_PATH_LENGTH-1);
+}
+
+
 static int begin_request(struct mg_connection *conn)
 {
   #define MESSAGE_DEF_SIZE 2048
@@ -486,6 +505,7 @@ static int begin_request(struct mg_connection *conn)
   int firstvar, numeric, numcnt, seendot;
   size_t i, name_length, value_length;
   size_t message_length = 0;
+  int withUpload = 0;
   int cmdlineCall = 0;
   int apiCall = 0;
   int csrfValPending = 0;
@@ -505,6 +525,13 @@ static int begin_request(struct mg_connection *conn)
     prefix_length = strnlen(jsonCmdlinePath, MAX_API_OPT_CHARS);
     if (prefix_length>0 && strncmp(mg_get_request_info(conn)->uri, jsonCmdlinePath, prefix_length)==0) {
       cmdlineCall = 1; // is a command line call
+    }
+    else {
+      prefix_length = strnlen(jsonUploadPath, MAX_API_OPT_CHARS);
+      if (prefix_length>0 && strncmp(mg_get_request_info(conn)->uri, jsonUploadPath, prefix_length)==0) {
+        cmdlineCall = 1; // is a command line call...
+        withUpload = 1; // ...with upload
+      }
     }
   }
   if (apiCall || cmdlineCall) {
@@ -612,20 +639,28 @@ static int begin_request(struct mg_connection *conn)
       strcmp(mg_get_request_info(conn)->request_method, "POST")==0 ||
       strcmp(mg_get_request_info(conn)->request_method, "PUT")==0
     ) {
-      // put or post
-      message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,", \"data\": ");
-      // get POST/PUT payload data
-      p = message+message_length;
-      size_t n = mg_read(conn, p, MESSAGE_DEF_SIZE-message_length-1);
-      size_t payloadLen = n;
-      // replace all whitespace by actual space chars (eliminating line feeds)
-      while (n>0) {
-        if (isspace(*p))
-          *p = ' ';
-        ++p;
-        --n;
+      if (withUpload && *uploadDir!=0) {
+        // PUT or POST carries file upload(s)
+        mg_upload(conn, uploadDir);
+        // pass last uploaded file name with JSON query
+        message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length, ", \"uploadedfile\": \"%s\"", lastUploadedFilePath);
       }
-      message_length += payloadLen;
+      else {
+        // put or post carrying JSON data
+        message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length, ", \"data\": ");
+        // get POST/PUT payload data
+        p = message+message_length;
+        size_t n = mg_read(conn, p, MESSAGE_DEF_SIZE-message_length-1);
+        size_t payloadLen = n;
+        // replace all whitespace by actual space chars (eliminating line feeds)
+        while (n>0) {
+          if (isspace(*p))
+            *p = ' ';
+          ++p;
+          --n;
+        }
+        message_length += payloadLen;
+      }
     }
     // end of JSON object + LF
     message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length," }\n");
@@ -647,9 +682,13 @@ static int begin_request(struct mg_connection *conn)
       message_length = json_cmdline_call(&message, MESSAGE_DEF_SIZE);
       message[message_length]=0; // terminate
     }
-    // return JSON or PNG answer
-    // - check for PNG header: 0x89504E47 = 0x89 'P' 'N' 'G'
+    // start answer
+    mg_printf(conn, "HTTP/1.0 200 OK\r\n");
     const char *contentType;
+    int contentType_len = 0;
+    const char *msgP = message;
+    // analyze answer
+    // - check for PNG header: 0x89504E47 = 0x89 'P' 'N' 'G'
     if (
       message_length>4 &&
       (uint8_t)message[0]==0x89 &&
@@ -659,18 +698,49 @@ static int begin_request(struct mg_connection *conn)
     ) {
       // is PNG
       contentType = "image/png";
+      contentType_len = (int)strlen(contentType);
     }
     else {
+      // - check for custom content and headers
+      i=0;
+      while (i<message_length) {
+        if (message[i]==0x03) {
+          // ctrl-C for "content type"
+          contentType = &message[++i];
+          while (i<message_length && message[i++]>=0x20) contentType_len++;
+        }
+        else if (message[i]==0x08) {
+          // ctrl-H for header line as-is
+          i++;
+          int n = 0;
+          while (i+n<message_length && message[i+n]>=0x20) n++;
+          mg_printf(conn, "%.*s\r\n", n, &message[i]);
+          i+=n;
+        }
+        else {
+          // done with special prefix lines
+          break;
+        }
+        // skip CRLF
+        if (i<message_length && message[i]==0x0D) i++;
+        if (i<message_length && message[i]==0x0A) i++;
+      }
+      // skip prefixes
+      msgP = &message[i];
+      message_length -= i;
+    }
+    if (contentType_len==0) {
       // assume JSON
       contentType = "application/json";
+      contentType_len = (int)strlen(contentType);
     }
     mg_printf(
-      conn, "HTTP/1.0 200 OK\r\n"
+      conn,
       "Content-Length: %ld\r\n"
-      "Content-Type: %s\r\n\r\n",
-      message_length, contentType
+      "Content-Type: %.*s\r\n\r\n",
+      message_length, contentType_len, contentType
     );
-    mg_write(conn, message, message_length);
+    mg_write(conn, msgP, message_length);
     // done
     free(message); message = NULL;
     // Returning non-zero tells mongoose that our function has replied to
@@ -775,6 +845,8 @@ static void start_mongoose(int argc, char *argv[]) {
   callbacks.log_message = &log_message;
   // Install request handler callback to catch API calls
   callbacks.begin_request = &begin_request;
+  // Install handler to catch uploads
+  callbacks.upload = &upload_occurred;
 
   ctx = mg_start(&callbacks, NULL, (const char **) options);
   for (i = 0; options[i] != NULL; i++) {
