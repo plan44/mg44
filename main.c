@@ -423,6 +423,10 @@ static size_t json_cmdline_call(char **messageBufP, size_t maxAnswerBytes)
         dup2(answerPipe[1], STDOUT_FILENO); // replace STDOUT by writing end of pipe
         close(answerPipe[1]); // release the original descriptor (does NOT really close the file)
         close(answerPipe[0]); // close child's reading end of pipe (parent uses it!)
+        // make sure child can detect when it's own children terminate
+        // (an ignored SIGCHLD state is inherited from parent - in this
+        // case, the mongoose server, which DOES ignore SIGCHLD)
+        signal(SIGCHLD, SIG_DFL);
         // close all non-std file descriptors
         int fd = getdtablesize();
         while (fd>STDERR_FILENO) close(fd--);
