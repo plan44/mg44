@@ -495,6 +495,7 @@ static void request_csrf_token(struct mg_connection *conn)
 
 static void upload_occurred(struct mg_connection *conn, const char *file_name)
 {
+  DEBUG_TRACE(("uploaded occured, file = %s", lastUploadedFilePath));
   strncpy(lastUploadedFilePath, file_name, MAX_UPLOAD_PATH_LENGTH-1);
 }
 
@@ -645,9 +646,14 @@ static int begin_request(struct mg_connection *conn)
     ) {
       if (withUpload && *uploadDir!=0) {
         // PUT or POST carries file upload(s)
-        mg_upload(conn, uploadDir);
-        // pass last uploaded file name with JSON query
-        message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length, ", \"uploadedfile\": \"%s\"", lastUploadedFilePath);
+        lastUploadedFilePath[0]=0;
+        int numfiles = mg_upload(conn, uploadDir);
+        if (numfiles>=1) {
+          // pass last uploaded file name with JSON query
+          message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length, ", \"uploadedfile\": \"%s\"", lastUploadedFilePath);
+          DEBUG_TRACE(("uploaded %d files, last uploaded = %s", numfiles, lastUploadedFilePath));
+        }
+        lastUploadedFilePath[0]=0;
       }
       else {
         // put or post carrying JSON data
@@ -668,7 +674,7 @@ static int begin_request(struct mg_connection *conn)
     }
     // end of JSON object + LF
     message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length," }\n");
-    DEBUG_TRACE(("json = %s", message));
+    DEBUG_TRACE(("request json = %s", message));
     // abort call if csrf token is not ok
     if (csrfValPending) {
       // abort
@@ -679,11 +685,15 @@ static int begin_request(struct mg_connection *conn)
     }
     else if (apiCall) {
       // send json request, receive answer
+      DEBUG_TRACE(("calling json_api_call()"));
       message_length = json_api_call(&message, MESSAGE_DEF_SIZE);
+      DEBUG_TRACE(("called json_api_call() = %ld", message_length));
       message[message_length]=0; // terminate
     }
     else if (cmdlineCall) {
+      DEBUG_TRACE(("calling json_cmdline_call()"));
       message_length = json_cmdline_call(&message, MESSAGE_DEF_SIZE);
+      DEBUG_TRACE(("called json_cmdline_call() = %ld", message_length));
       message[message_length]=0; // terminate
     }
     // start answer
@@ -701,6 +711,7 @@ static int begin_request(struct mg_connection *conn)
       (uint8_t)message[3]==0x47
     ) {
       // is PNG
+      DEBUG_TRACE(("detected PNG answer from socket API"));
       contentType = "image/png";
       contentType_len = (int)strlen(contentType);
     }
@@ -712,12 +723,14 @@ static int begin_request(struct mg_connection *conn)
           // ctrl-C for "content type"
           contentType = &message[++i];
           while (i<message_length && message[i++]>=0x20) contentType_len++;
+          DEBUG_TRACE(("detected custom content type (^C): %.*s", contentType_len, contentType));
         }
         else if (message[i]==0x08) {
           // ctrl-H for header line as-is
           i++;
           int n = 0;
           while (i+n<message_length && message[i+n]>=0x20) n++;
+          DEBUG_TRACE(("detected custom header line (^H): %.*s", n, &message[i]));
           mg_printf(conn, "%.*s\r\n", n, &message[i]);
           i+=n;
         }
@@ -735,6 +748,7 @@ static int begin_request(struct mg_connection *conn)
     }
     if (contentType_len==0) {
       // assume JSON
+      DEBUG_TRACE(("assuming content type json for response from socket API"));
       contentType = "application/json";
       contentType_len = (int)strlen(contentType);
     }
@@ -744,6 +758,7 @@ static int begin_request(struct mg_connection *conn)
       "Content-Type: %.*s\r\n\r\n",
       message_length, contentType_len, contentType
     );
+    DEBUG_TRACE(("response body = %.*s", (int)message_length, msgP));
     mg_write(conn, msgP, message_length);
     // done
     free(message); message = NULL;
