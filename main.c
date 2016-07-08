@@ -80,16 +80,25 @@
 #define MAX_OPTIONS 40
 #define MAX_CONF_FILE_LINE_SIZE (8 * 1024)
 
+#define MAX_UPLOAD_PATH_LENGTH 100
+
+
 static int exit_flag;
 static char server_name[40];        // Set by init_server_name()
 static char config_file[PATH_MAX];  // Set by process_command_line_arguments()
 static struct mg_context *ctx;      // Set by start_mongoose()
+
+static char csrf_token_seed[9];     // random string for this server instance
+static char lastUploadedFilePath[MAX_UPLOAD_PATH_LENGTH]; // path to last file uploaded
+
 
 #ifdef __APPLE__
 #define MAX_API_OPT_CHARS 400
 #else
 #define MAX_API_OPT_CHARS 40
 #endif
+// JSON CSRF protection
+static char jsonCSRFPath[MAX_API_OPT_CHARS]; // path prefix for JSON CSRF token generator
 // JSON REST API passtrough
 static char jsonApiPath[MAX_API_OPT_CHARS]; // path prefix for JSON API passthrough
 static char jsonApiHost[MAX_API_OPT_CHARS]; // host name/IP for JSON API passthrough
@@ -97,6 +106,8 @@ static char jsonApiService[MAX_API_OPT_CHARS]; // service name or port number fo
 // JSON command line API passtrough
 static char jsonCmdlinePath[MAX_API_OPT_CHARS]; // path prefix for JSON command line passthrough
 static char jsonCmdlineTool[MAX_API_OPT_CHARS]; // full path for command line tool which handles JSON requests
+static char jsonUploadPath[MAX_API_OPT_CHARS]; // path prefix for JSON command with previous file upload
+static char uploadDir[MAX_API_OPT_CHARS]; // directory where to save uploaded files
 
 
 #if !defined(CONFIG_FILE)
@@ -175,7 +186,10 @@ static void set_option(char **options, const char *name, const char *value) {
   }
 
   // check p44 API passthrough options
-  if (strcmp(name, "jsonapi_path")==0) {
+  if (strcmp(name, "jsoncsrf_path")==0) {
+    strncpy(jsonCSRFPath, value, MAX_API_OPT_CHARS);
+  }
+  else if (strcmp(name, "jsonapi_path")==0) {
     strncpy(jsonApiPath, value, MAX_API_OPT_CHARS);
   }
   else if (strcmp(name, "jsonapi_host")==0) {
@@ -186,6 +200,12 @@ static void set_option(char **options, const char *name, const char *value) {
   }
   else   if (strcmp(name, "jsoncmd_path")==0) {
     strncpy(jsonCmdlinePath, value, MAX_API_OPT_CHARS);
+  }
+  else   if (strcmp(name, "jsonupload_path")==0) {
+    strncpy(jsonUploadPath, value, MAX_API_OPT_CHARS);
+  }
+  else   if (strcmp(name, "uploaddir")==0) {
+    strncpy(uploadDir, value, MAX_API_OPT_CHARS);
   }
   else if (strcmp(name, "jsoncmd_tool")==0) {
     strncpy(jsonCmdlineTool, value, MAX_API_OPT_CHARS);
@@ -436,32 +456,86 @@ static size_t json_cmdline_call(char **messageBufP, size_t maxAnswerBytes)
 }
 
 
+static void get_csrf_token(struct mg_connection *conn, char *tok)
+{
+  char remote[9];
+  sprintf(remote, "%8lX", mg_get_request_info(conn)->remote_ip);
+  mg_md5(
+    tok, // will get MD5 token
+    mg_get_request_info(conn)->remote_user ? mg_get_request_info(conn)->remote_user : "anonymous", // user
+    remote, // remote party
+    csrf_token_seed, // random ID unique to this mg44 instance
+    NULL // terminator
+  );
+}
+
+
+static void request_csrf_token(struct mg_connection *conn)
+{
+  // create and return csrf protection token
+  // - must be unique to the authenticated user
+  // - must be unique to this client's IP
+  // - must be randomly unique to this running mg44 process, so knowing this hashing function does not help
+  char tok[33];
+  get_csrf_token(conn, tok);
+  mg_printf(
+    conn, "HTTP/1.0 200 OK\r\n"
+    "Content-Length: %ld\r\n"
+    "Content-Type: text/plain\r\n\r\n\"%s\"",
+    strlen(tok)+2,
+    tok
+  );
+}
+
+
+
+static void upload_occurred(struct mg_connection *conn, const char *file_name)
+{
+  strncpy(lastUploadedFilePath, file_name, MAX_UPLOAD_PATH_LENGTH-1);
+}
 
 
 static int begin_request(struct mg_connection *conn)
 {
   #define MESSAGE_DEF_SIZE 2048
+  char refTok[33];
   char c, *message;
   char *p, *valbuf;
   const char *q, *qvar;
   int firstvar, numeric, numcnt, seendot;
-  size_t i, value_length;
+  size_t i, name_length, value_length;
   size_t message_length = 0;
+  int withUpload = 0;
   int cmdlineCall = 0;
   int apiCall = 0;
-  // check for API
-  size_t n = strnlen(jsonApiPath, MAX_API_OPT_CHARS);
-  if (n>0 && strncmp(mg_get_request_info(conn)->uri, jsonApiPath, n)==0) {
+  int csrfValPending = 0;
+  // check for csrf protection token call
+  size_t prefix_length = strnlen(jsonCSRFPath, MAX_API_OPT_CHARS);
+  if (prefix_length>0 && strncmp(mg_get_request_info(conn)->uri, jsonCSRFPath, prefix_length)==0) {
+    // create and return csrf protection token
+    request_csrf_token(conn);
+    return 1; // request done
+  }
+  // check for API calls
+  prefix_length = strnlen(jsonApiPath, MAX_API_OPT_CHARS);
+  if (prefix_length>0 && strncmp(mg_get_request_info(conn)->uri, jsonApiPath, prefix_length)==0) {
     apiCall = 1; // is an API call
   }
   else {
-    size_t n = strnlen(jsonCmdlinePath, MAX_API_OPT_CHARS);
-    if (n>0 && strncmp(mg_get_request_info(conn)->uri, jsonCmdlinePath, n)==0) {
+    prefix_length = strnlen(jsonCmdlinePath, MAX_API_OPT_CHARS);
+    if (prefix_length>0 && strncmp(mg_get_request_info(conn)->uri, jsonCmdlinePath, prefix_length)==0) {
       cmdlineCall = 1; // is a command line call
+    }
+    else {
+      prefix_length = strnlen(jsonUploadPath, MAX_API_OPT_CHARS);
+      if (prefix_length>0 && strncmp(mg_get_request_info(conn)->uri, jsonUploadPath, prefix_length)==0) {
+        cmdlineCall = 1; // is a command line call...
+        withUpload = 1; // ...with upload
+      }
     }
   }
   if (apiCall || cmdlineCall) {
-    // JSON call to deliver to a daemon or the commandline
+    // JSON API call to deliver to a daemon or the commandline
     message = malloc(MESSAGE_DEF_SIZE);
     // create pure JSON request
     // { "method" : "GET", "uri" : "/myuri" }
@@ -470,8 +544,9 @@ static int begin_request(struct mg_connection *conn)
       message, MESSAGE_DEF_SIZE,
       "{ \"method\":\"%s\", \"uri\":\"%s\"",
       mg_get_request_info(conn)->request_method,
-      mg_get_request_info(conn)->uri+n // rest of URI
+      mg_get_request_info(conn)->uri+prefix_length // rest of URI
     );
+    csrfValPending = *jsonCSRFPath!=0; // pending if jsonCSRFPath is set
     // check query variables
     q = mg_get_request_info(conn)->query_string;
     if (q && *q) {
@@ -485,11 +560,21 @@ static int begin_request(struct mg_connection *conn)
         // add name and begin of string
         if (!firstvar)
           message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,", ");
-        message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"\"%.*s\": ", (int)(q-qvar), qvar);
+        name_length = (int)(q-qvar);
+        message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"\"%.*s\": ", (int)name_length, qvar);
         firstvar = 0;
         // check value
         if (*q=='=') {
           // has value
+          // check for csrf token
+          if (csrfValPending && strncmp("rqvaltok", qvar, name_length)==0) {
+            // is token, check it
+            get_csrf_token(conn, refTok);
+            if (strncmp(refTok, q+1, strlen(refTok))==0) {
+              // matching token found
+              csrfValPending = 0; // allowed to run the request
+            }
+          }
           qvar = ++q; // beginning of value
           numeric = 1; // assume pure numeric
           numcnt = 0;
@@ -554,25 +639,41 @@ static int begin_request(struct mg_connection *conn)
       strcmp(mg_get_request_info(conn)->request_method, "POST")==0 ||
       strcmp(mg_get_request_info(conn)->request_method, "PUT")==0
     ) {
-      // put or post
-      message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,", \"data\": ");
-      // get POST/PUT payload data
-      p = message+message_length;
-      size_t n = mg_read(conn, p, MESSAGE_DEF_SIZE-message_length-1);
-      size_t payloadLen = n;
-      // replace all whitespace by actual space chars (eliminating line feeds)
-      while (n>0) {
-        if (isspace(*p))
-          *p = ' ';
-        ++p;
-        --n;
+      if (withUpload && *uploadDir!=0) {
+        // PUT or POST carries file upload(s)
+        mg_upload(conn, uploadDir);
+        // pass last uploaded file name with JSON query
+        message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length, ", \"uploadedfile\": \"%s\"", lastUploadedFilePath);
       }
-      message_length += payloadLen;
+      else {
+        // put or post carrying JSON data
+        message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length, ", \"data\": ");
+        // get POST/PUT payload data
+        p = message+message_length;
+        size_t n = mg_read(conn, p, MESSAGE_DEF_SIZE-message_length-1);
+        size_t payloadLen = n;
+        // replace all whitespace by actual space chars (eliminating line feeds)
+        while (n>0) {
+          if (isspace(*p))
+            *p = ' ';
+          ++p;
+          --n;
+        }
+        message_length += payloadLen;
+      }
     }
     // end of JSON object + LF
     message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length," }\n");
     DEBUG_TRACE(("json = %s", message));
-    if (apiCall) {
+    // abort call if csrf token is not ok
+    if (csrfValPending) {
+      // abort
+      DEBUG_TRACE(("csrf token does not match"));
+      free(message); message = NULL;
+      mg_printf(conn, "HTTP/1.0 403 Forbidden\r\n\r\n<html><body><h1>forbidden</h1></body></html>");
+      return 1; // request handled
+    }
+    else if (apiCall) {
       // send json request, receive answer
       message_length = json_api_call(&message, MESSAGE_DEF_SIZE);
       message[message_length]=0; // terminate
@@ -581,9 +682,13 @@ static int begin_request(struct mg_connection *conn)
       message_length = json_cmdline_call(&message, MESSAGE_DEF_SIZE);
       message[message_length]=0; // terminate
     }
-    // return JSON or PNG answer
-    // - check for PNG header: 0x89504E47 = 0x89 'P' 'N' 'G'
+    // start answer
+    mg_printf(conn, "HTTP/1.0 200 OK\r\n");
     const char *contentType;
+    int contentType_len = 0;
+    const char *msgP = message;
+    // analyze answer
+    // - check for PNG header: 0x89504E47 = 0x89 'P' 'N' 'G'
     if (
       message_length>4 &&
       (uint8_t)message[0]==0x89 &&
@@ -593,18 +698,49 @@ static int begin_request(struct mg_connection *conn)
     ) {
       // is PNG
       contentType = "image/png";
+      contentType_len = (int)strlen(contentType);
     }
     else {
+      // - check for custom content and headers
+      i=0;
+      while (i<message_length) {
+        if (message[i]==0x03) {
+          // ctrl-C for "content type"
+          contentType = &message[++i];
+          while (i<message_length && message[i++]>=0x20) contentType_len++;
+        }
+        else if (message[i]==0x08) {
+          // ctrl-H for header line as-is
+          i++;
+          int n = 0;
+          while (i+n<message_length && message[i+n]>=0x20) n++;
+          mg_printf(conn, "%.*s\r\n", n, &message[i]);
+          i+=n;
+        }
+        else {
+          // done with special prefix lines
+          break;
+        }
+        // skip CRLF
+        if (i<message_length && message[i]==0x0D) i++;
+        if (i<message_length && message[i]==0x0A) i++;
+      }
+      // skip prefixes
+      msgP = &message[i];
+      message_length -= i;
+    }
+    if (contentType_len==0) {
       // assume JSON
       contentType = "application/json";
+      contentType_len = (int)strlen(contentType);
     }
     mg_printf(
-      conn, "HTTP/1.0 200 OK\r\n"
+      conn,
       "Content-Length: %ld\r\n"
-      "Content-Type: %s\r\n\r\n",
-      message_length, contentType
+      "Content-Type: %.*s\r\n\r\n",
+      message_length, contentType_len, contentType
     );
-    mg_write(conn, message, message_length);
+    mg_write(conn, msgP, message_length);
     // done
     free(message); message = NULL;
     // Returning non-zero tells mongoose that our function has replied to
@@ -709,6 +845,8 @@ static void start_mongoose(int argc, char *argv[]) {
   callbacks.log_message = &log_message;
   // Install request handler callback to catch API calls
   callbacks.begin_request = &begin_request;
+  // Install handler to catch uploads
+  callbacks.upload = &upload_occurred;
 
   ctx = mg_start(&callbacks, NULL, (const char **) options);
   for (i = 0; options[i] != NULL; i++) {
@@ -722,6 +860,8 @@ static void start_mongoose(int argc, char *argv[]) {
 
 
 int main(int argc, char *argv[]) {
+  srand((int)argv[0]); // memory pointer as seed
+  sprintf(csrf_token_seed, "%08lX", (long)rand());
   init_server_name();
   start_mongoose(argc, argv);
   printf("%s started on port(s) %s with web root [%s]\n",
