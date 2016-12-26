@@ -103,10 +103,11 @@ static char jsonCSRFPath[MAX_API_OPT_CHARS]; // path prefix for JSON CSRF token 
 static char jsonApiPath[MAX_API_OPT_CHARS]; // path prefix for JSON API passthrough
 static char jsonApiHost[MAX_API_OPT_CHARS]; // host name/IP for JSON API passthrough
 static char jsonApiService[MAX_API_OPT_CHARS]; // service name or port number for JSON API pass through
+static char jsonApiUploadPath[MAX_API_OPT_CHARS]; // path prefix for JSON API cal with preceeding file upload
 // JSON command line API passtrough
 static char jsonCmdlinePath[MAX_API_OPT_CHARS]; // path prefix for JSON command line passthrough
 static char jsonCmdlineTool[MAX_API_OPT_CHARS]; // full path for command line tool which handles JSON requests
-static char jsonUploadPath[MAX_API_OPT_CHARS]; // path prefix for JSON command with previous file upload
+static char jsonUploadPath[MAX_API_OPT_CHARS]; // path prefix for JSON command with preceeding file upload
 static char uploadDir[MAX_API_OPT_CHARS]; // directory where to save uploaded files
 
 
@@ -203,6 +204,9 @@ static void set_option(char **options, const char *name, const char *value) {
   }
   else   if (strcmp(name, "jsonupload_path")==0) {
     strncpy(jsonUploadPath, value, MAX_API_OPT_CHARS);
+  }
+  else   if (strcmp(name, "jsonapiupload_path")==0) {
+    strncpy(jsonApiUploadPath, value, MAX_API_OPT_CHARS);
   }
   else   if (strcmp(name, "uploaddir")==0) {
     strncpy(uploadDir, value, MAX_API_OPT_CHARS);
@@ -536,6 +540,13 @@ static int begin_request(struct mg_connection *conn)
       if (prefix_length>0 && strncmp(mg_get_request_info(conn)->uri, jsonUploadPath, prefix_length)==0) {
         cmdlineCall = 1; // is a command line call...
         withUpload = 1; // ...with upload
+      }
+      else {
+        prefix_length = strnlen(jsonApiUploadPath, MAX_API_OPT_CHARS);
+        if (prefix_length>0 && strncmp(mg_get_request_info(conn)->uri, jsonApiUploadPath, prefix_length)==0) {
+          apiCall = 1; // is a JSON call...
+          withUpload = 1; // ...with upload
+        }
       }
     }
   }
