@@ -42,6 +42,7 @@
 <listOptionValue builtIn="false" value="dl"/>
 <listOptionValue builtIn="false" value="pthread"/>
 </option>
+<option id="gnu.c.link.option.strip.335876201" superClass="gnu.c.link.option.strip" value="true" valueType="boolean"/>
 <inputType id="cdt.managedbuild.tool.gnu.c.linker.input.1833683716" superClass="cdt.managedbuild.tool.gnu.c.linker.input">
 <additionalInput kind="additionalinputdependency" paths="$(USER_OBJS)"/>
 <additionalInput kind="additionalinput" paths="$(LIBS)"/>
@@ -476,7 +477,7 @@
 <targetPlatform id="com.digi.lxnetes.managedbuild.targetPlatform.release.2130680921" name="Debug Platform" superClass="com.digi.lxnetes.managedbuild.targetPlatform.release"/>
 <builder buildPath="${workspace_loc:/mg44/Release}" id="com.digi.lxnetes.builder.exe.release.1075726043" keepEnvironmentInBuildfile="false" managedBuildOn="true" name="Gnu Make Builder" superClass="com.digi.lxnetes.builder.exe.release"/>
 <tool id="com.digi.lxnetes.managedbuild.archiver.base.518515486" name="GCC C Cross-Archiver" superClass="com.digi.lxnetes.managedbuild.archiver.base"/>
-<tool id="com.digi.lxnetes.managedbuild.c.compiler.release.1789422467" name="GCC C Cross-Compiler" superClass="com.digi.lxnetes.managedbuild.c.compiler.release">
+<tool command="$(CC)" commandLinePattern="${COMMAND} ${FLAGS} ${OUTPUT_FLAG}${OUTPUT_PREFIX}${OUTPUT} ${INPUTS}" id="com.digi.lxnetes.managedbuild.c.compiler.release.1789422467" name="GCC C Cross-Compiler" superClass="com.digi.lxnetes.managedbuild.c.compiler.release">
 <option defaultValue="gnu.c.optimization.level.most" id="gnu.c.compiler.option.optimization.level.2038669307" name="Optimization Level" superClass="gnu.c.compiler.option.optimization.level" value="gnu.c.optimization.level.more" valueType="enumerated"/>
 <option id="gnu.c.compiler.option.debugging.level.1919505813" name="Debug Level" superClass="gnu.c.compiler.option.debugging.level" value="gnu.c.debugging.level.none" valueType="enumerated"/>
 <option id="gnu.c.compiler.option.include.paths.1979413060" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" valueType="includePath">
@@ -497,6 +498,7 @@
 <listOptionValue builtIn="false" value="dl"/>
 <listOptionValue builtIn="false" value="pthread"/>
 </option>
+<option id="gnu.c.link.option.strip.534556438" name="Omit all symbol information (-s)" superClass="gnu.c.link.option.strip" value="true" valueType="boolean"/>
 <inputType id="cdt.managedbuild.tool.gnu.c.linker.input.1909409430" superClass="cdt.managedbuild.tool.gnu.c.linker.input">
 <additionalInput kind="additionalinputdependency" paths="$(USER_OBJS)"/>
 <additionalInput kind="additionalinput" paths="$(LIBS)"/>
