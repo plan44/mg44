@@ -513,6 +513,7 @@ struct mg_connection {
   int64_t consumed_content;   // How many bytes of content have been read
   char *buf;                  // Buffer for received data
   char *path_info;            // PATH_INFO part of the URL
+  int has_content_len;        // for mg_download/mg_read_ex: set if actual content-lenght header found in response
   int must_close;             // 1 if connection must be closed
   ssize_t buf_size;           // Buffer size
   ssize_t request_len;        // Size of the request + headers in a buffer
@@ -1591,8 +1592,8 @@ ssize_t mg_read_ex(struct mg_connection *conn, void *buf, size_t len, int stream
   ssize_t n, buffered_len, nread;
   const char *body;
 
-  // If Content-Length is not set, read until socket is closed
-  if (conn->consumed_content == 0 && conn->content_len == 0) {
+  // If Content-Length is not set, read until socket is closed (but do NOT do that when Content-Length is set to 0 explicitly!)
+  if (conn->consumed_content == 0 && conn->content_len == 0 && !conn->has_content_len) {
     conn->content_len = INT64_MAX;
     conn->must_close = 1;
   }
@@ -1690,6 +1691,15 @@ static int alloc_vprintf(char **buf, size_t size, const char *fmt, va_list ap) {
 
   return len;
 }
+
+
+static int alloc_printf(char **buf, size_t size, const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  return alloc_vprintf(buf, size, fmt, ap);
+}
+
+
 
 ssize_t mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap) {
   char mem[MG_BUF_LEN], *buf = mem;
@@ -2428,6 +2438,182 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
 
   return 1;
 }
+
+
+
+// Digest realm="Simulated VZug Test Device vzug/vzug", nonce="7V4cT0BMBQA=009c37264d0fa0beb3c4d1f826663ddd2263f567", algorithm=MD5, qop="auth"
+#define NONCE_MAX_SZ 256
+
+// Parsed WWW-Authenticate header (including buffer)
+struct wah {
+  char *realm, *domain, *nonce, *opaque, *algorithm, *stale, *qop;
+  int nc;
+  char new_nonce[NONCE_MAX_SZ];
+  size_t buflen;
+  char buf[1]; // actual size of memory block will be larger
+};
+
+// Return 1 on success. Allocates and returns wah structure on success, frees previous wah first.
+static int parse_wwwauth_header(struct mg_connection *conn, struct wah **wahP) {
+  char *name, *value, *s;
+  const char *wwwauth_header;
+  size_t bl;
+
+  if (!wahP) return 0;
+  if ((wwwauth_header = mg_get_header(conn, "WWW-Authenticate")) == NULL ||
+      mg_strncasecmp(wwwauth_header, "Digest ", 7) != 0) {
+    return 0;
+  }
+  if (*wahP) free(*wahP);
+  bl = strlen(wwwauth_header)-7+1;
+  *wahP = malloc(sizeof(struct wah)+bl);
+  (void) memset(*wahP, 0, sizeof(struct wah));
+  (*wahP)->buflen = bl;
+
+  // Make modifiable copy of the auth header
+  (void) mg_strlcpy((*wahP)->buf, wwwauth_header + 7, (*wahP)->buflen);
+  s = (*wahP)->buf;
+
+  // Parse authorization header
+  for (;;) {
+    // Gobble initial spaces
+    while (isspace(* (unsigned char *) s)) {
+      s++;
+    }
+    name = skip_quoted(&s, "=", " ", 0);
+    // Value is either quote-delimited, or ends at first comma or space.
+    if (s[0] == '\"') {
+      s++;
+      value = skip_quoted(&s, "\"", " ", '\\');
+      if (s[0] == ',') {
+        s++;
+      }
+    } else {
+      value = skip_quoted(&s, ", ", " ", 0);  // IE uses commas, FF uses spaces
+    }
+    if (*name == '\0') {
+      break;
+    }
+
+    if (!strcmp(name, "realm")) {
+      (*wahP)->realm = value;
+    } else if (!strcmp(name, "domain")) {
+      (*wahP)->domain = value;
+    } else if (!strcmp(name, "nonce")) {
+      (*wahP)->nonce = value;
+    } else if (!strcmp(name, "opaque")) {
+      (*wahP)->opaque = value;
+    } else if (!strcmp(name, "algorithm")) {
+      (*wahP)->algorithm = value;
+    } else if (!strcmp(name, "stale")) {
+      (*wahP)->stale = value;
+    } else if (!strcmp(name, "qop")) {
+      (*wahP)->qop = value;
+    }
+  }
+  return 1;
+}
+
+
+// Return 1 on success. Always initializes the wah structure.
+static int parse_authinfo_nextnonce(struct mg_connection *conn, char *buf, size_t buf_size) {
+  char *name, *value, *s;
+  const char *authinfo_header;
+  char abuf[MG_BUF_LEN];
+
+  if ((authinfo_header = mg_get_header(conn, "Authentication-Info")) == NULL) {
+    return 0;
+  }
+
+  // Make modifiable copy of the auth header
+  (void) mg_strlcpy(abuf, authinfo_header, MG_BUF_LEN);
+  s = abuf;
+
+  // Parse authorization header
+  for (;;) {
+    // Gobble initial spaces
+    while (isspace(* (unsigned char *) s)) {
+      s++;
+    }
+    name = skip_quoted(&s, "=", " ", 0);
+    // Value is either quote-delimited, or ends at first comma or space.
+    if (s[0] == '\"') {
+      s++;
+      value = skip_quoted(&s, "\"", " ", '\\');
+      if (s[0] == ',') {
+        s++;
+      }
+    } else {
+      value = skip_quoted(&s, ", ", " ", 0);  // IE uses commas, FF uses spaces
+    }
+    if (*name == '\0') {
+      break;
+    }
+
+    if (!strcmp(name, "nextnonce")) {
+      mg_strlcpy(buf, value, buf_size);
+      return 1;
+    }
+  }
+  // nextnonce not found
+  return 0;
+}
+
+
+
+int create_authorization_header(struct wah *wah, const char *uri, const char *method, const char *username, const char *password, char *buf, size_t buf_size) {
+  char ha1[32 + 1];
+  char ha2[32 + 1];
+  char response[32 + 1];
+  char nc[12];
+  char cnonce[12];
+  size_t n;
+
+  if (
+    !uri || !method || !username || !password ||
+    !wah->realm || !wah->nonce || !wah->qop || mg_strcasestr(wah->qop, "auth")==0
+  ) {
+    return 0;
+  }
+
+  sprintf(cnonce, "%ld", (unsigned long) time(NULL));
+  wah->nc++;
+  sprintf(nc, "%08X", wah->nc);
+
+  mg_md5(ha1, username, ":", wah->realm, ":", password, NULL);
+  mg_md5(ha2, method, ":", uri, NULL);
+  mg_md5(response, ha1, ":", wah->nonce, ":", nc,
+         ":", cnonce, ":", wah->qop, ":", ha2, NULL);
+
+  n = snprintf(buf, buf_size,
+    "Authorization: Digest"
+    " username=\"%s\""
+    ", realm=\"%s\""
+    ", nonce=\"%s\""
+    ", uri=\"%s\""
+    ", response=\"%s\""
+    ", algorithm=\"MD5\""
+    ", cnonce=\"%s\""
+    ", nc=%s"
+    ", qop=\"auth\"", // regardless of what server requests, we just support this
+    username,
+    wah->realm,
+    wah->nonce,
+    uri,
+    response,
+    cnonce,
+    nc
+  );
+  if (wah->opaque) {
+    n += snprintf(buf+n, buf_size-n, ", opaque=\"%s\"", wah->opaque);
+  }
+  n += snprintf(buf+n, buf_size-n, "\r\n");
+  return 1;
+}
+
+
+
+
 
 static char *mg_fgets(char *buf, size_t size, struct file *filep, char **p) {
   char *eof;
@@ -4966,7 +5152,9 @@ static int getreq(struct mg_connection *conn, char *ebuf, size_t ebuf_len) {
     snprintf(ebuf, ebuf_len, "Bad request: [%.*s]", (int)conn->data_len, conn->buf);
   } else {
     // Request is valid
+    conn->has_content_len = 0;
     if ((cl = get_header(&conn->request_info, "Content-Length")) != NULL) {
+      conn->has_content_len = 1;
       conn->content_len = strtoll(cl, NULL, 10);
     } else if (!mg_strcasecmp(conn->request_info.request_method, "POST") ||
                !mg_strcasecmp(conn->request_info.request_method, "PUT")) {
@@ -5053,6 +5241,92 @@ struct mg_connection *mg_download_tmo(const char *host, int port, int use_ssl,
 
   return conn;
 }
+
+
+
+struct mg_connection *mg_download_ex(const char *host, int port, int use_ssl,
+                                     int timeout,
+                                     const char *method, const char *requesturi,
+                                     const char *username, const char *password, void **opaqueauthP,
+                                     char *ebuf, size_t ebuf_len,
+                                     const char *fmt, ...) {
+  struct mg_connection *conn;
+  char *authorization = NULL;
+  int reused_auth = 0;
+  struct wah *wah = NULL;
+  char *reqText = NULL;
+  size_t reqLen = 0;
+  va_list ap;
+  va_start(ap, fmt);
+
+  if (use_ssl && SSLv23_client_method==NULL) {
+    global_SSL_init(NULL); // load SSL DLLs, no server context
+  }
+
+  // if we already have www-auth infos from previous request, use it
+  if (opaqueauthP && *opaqueauthP) {
+    wah = (struct wah *)(*opaqueauthP);
+    *opaqueauthP = NULL; // take ownership for now
+    if (!authorization) authorization = malloc(MG_BUF_LEN);
+    create_authorization_header(wah, requesturi, method, username, password, authorization, MG_BUF_LEN);
+    reused_auth = 1;
+  }
+  while (1) {
+    ebuf[0] = '\0';
+    // produce main message (so it will be sent with a single mg_printf/mg_write below)
+    reqText = NULL;
+    reqLen = alloc_vprintf(&reqText, 0, fmt, ap);
+    if ((conn = mg_connect(host, port, use_ssl, ebuf, ebuf_len)) == NULL) {
+    } else if (
+      mg_printf(conn, "%s %s HTTP/1.1\r\nHost: %s\r\n%s%s", method, requesturi, host, authorization ? authorization : "", reqText) <= 0
+    ) {
+      snprintf(ebuf, ebuf_len, "%s", "Error sending request");
+    } else {
+      if (timeout>0) {
+        set_sock_timeout(conn->client.sock, timeout);
+      }
+      getreq(conn, ebuf, ebuf_len);
+    }
+    if (reqText) { free(reqText); reqText = NULL; }
+    if (ebuf[0] != '\0' && conn != NULL) {
+      mg_close_connection(conn);
+      conn = NULL;
+    }
+    if (conn) {
+      // check for http auth
+      if (mg_strncasecmp(conn->request_info.uri, "401", 3)==0 && username && password && (!authorization || reused_auth)) {
+        // 401 and we have user/pw and we haven't tried auth yet
+        if (parse_wwwauth_header(conn, &wah)) {
+          mg_close_connection(conn);
+          if (!authorization) authorization = malloc(MG_BUF_LEN);
+          if (create_authorization_header(wah, requesturi, method, username, password, authorization, MG_BUF_LEN)) {
+            // try again with auth
+            reused_auth = 0; // if this fails, do not retry
+            continue;
+          }
+        }
+      }
+    }
+    break;
+  }
+  if (authorization) free(authorization);
+  if (wah && conn) {
+    if (opaqueauthP) {
+      // keep auth info for next request
+      *opaqueauthP = wah; // pass ownership back
+      if (parse_authinfo_nextnonce(conn, (char *)&(wah->new_nonce), NONCE_MAX_SZ)) {
+        wah->nonce = (char *)&(wah->new_nonce);
+      }
+    }
+    else {
+      // one-time use, forget auth info
+      free(wah); // nobody to take ownership, free it
+    }
+  }
+  return conn;
+}
+
+
 
 
 

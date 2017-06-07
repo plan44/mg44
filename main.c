@@ -506,7 +506,7 @@ static void upload_occurred(struct mg_connection *conn, const char *file_name)
 
 static int begin_request(struct mg_connection *conn)
 {
-  #define MESSAGE_DEF_SIZE 2048
+  #define MESSAGE_DEF_SIZE 4096
   char refTok[33];
   char c, *message;
   char *p, *valbuf;
