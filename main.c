@@ -31,7 +31,7 @@
 #include <stdarg.h>
 #include <ctype.h>
 
-#include "mongoose.h"
+#include "civetweb.h"
 
 #include <sys/wait.h>
 #include <unistd.h>
@@ -466,8 +466,7 @@ static size_t json_cmdline_call(char **messageBufP, size_t maxAnswerBytes)
 
 static void get_csrf_token(struct mg_connection *conn, char *tok)
 {
-  char remote[9];
-  sprintf(remote, "%8lX", mg_get_request_info(conn)->remote_ip);
+  const char *remote = mg_get_request_info(conn)->remote_addr;
   mg_md5(
     tok, // will get MD5 token
     mg_get_request_info(conn)->remote_user ? mg_get_request_info(conn)->remote_user : "anonymous", // user
@@ -520,30 +519,30 @@ static int begin_request(struct mg_connection *conn)
   int csrfValPending = 0;
   // check for csrf protection token call
   size_t prefix_length = strnlen(jsonCSRFPath, MAX_API_OPT_CHARS);
-  if (prefix_length>0 && strncmp(mg_get_request_info(conn)->uri, jsonCSRFPath, prefix_length)==0) {
+  if (prefix_length>0 && strncmp(mg_get_request_info(conn)->local_uri, jsonCSRFPath, prefix_length)==0) {
     // create and return csrf protection token
     request_csrf_token(conn);
     return 1; // request done
   }
   // check for API calls
   prefix_length = strnlen(jsonApiPath, MAX_API_OPT_CHARS);
-  if (prefix_length>0 && strncmp(mg_get_request_info(conn)->uri, jsonApiPath, prefix_length)==0) {
+  if (prefix_length>0 && strncmp(mg_get_request_info(conn)->local_uri, jsonApiPath, prefix_length)==0) {
     apiCall = 1; // is an API call
   }
   else {
     prefix_length = strnlen(jsonCmdlinePath, MAX_API_OPT_CHARS);
-    if (prefix_length>0 && strncmp(mg_get_request_info(conn)->uri, jsonCmdlinePath, prefix_length)==0) {
+    if (prefix_length>0 && strncmp(mg_get_request_info(conn)->local_uri, jsonCmdlinePath, prefix_length)==0) {
       cmdlineCall = 1; // is a command line call
     }
     else {
       prefix_length = strnlen(jsonUploadPath, MAX_API_OPT_CHARS);
-      if (prefix_length>0 && strncmp(mg_get_request_info(conn)->uri, jsonUploadPath, prefix_length)==0) {
+      if (prefix_length>0 && strncmp(mg_get_request_info(conn)->local_uri, jsonUploadPath, prefix_length)==0) {
         cmdlineCall = 1; // is a command line call...
         withUpload = 1; // ...with upload
       }
       else {
         prefix_length = strnlen(jsonApiUploadPath, MAX_API_OPT_CHARS);
-        if (prefix_length>0 && strncmp(mg_get_request_info(conn)->uri, jsonApiUploadPath, prefix_length)==0) {
+        if (prefix_length>0 && strncmp(mg_get_request_info(conn)->local_uri, jsonApiUploadPath, prefix_length)==0) {
           apiCall = 1; // is a JSON call...
           withUpload = 1; // ...with upload
         }
@@ -560,7 +559,7 @@ static int begin_request(struct mg_connection *conn)
       message, MESSAGE_DEF_SIZE,
       "{ \"method\":\"%s\", \"uri\":\"%s\"",
       mg_get_request_info(conn)->request_method,
-      mg_get_request_info(conn)->uri+prefix_length // rest of URI
+      mg_get_request_info(conn)->local_uri+prefix_length // rest of URI
     );
     csrfValPending = *jsonCSRFPath!=0; // pending if jsonCSRFPath is set
     // check query variables

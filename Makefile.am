@@ -3,24 +3,35 @@ ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS} -I m4
 
 bin_PROGRAMS = mg44
 
-mg44_CXXFLAGS = $(JSONC_CFLAGS) $(PTHREAD_CFLAGS)
-
 if P44_BUILD_RPI
 
-mg44_LDADD = $(PTHREAD_LIBS) -lmongoose -ljson-c -lcrypt
-
-mg44_SOURCES = \
-  main.c
+PLATFORM_FLAGS =
+mg44_LDADD = ${PTHREAD_LIBS} -ljson-c -lcrypt
 
 else
 
-mg44_LDADD = $(PTHREAD_LIBS) $(JSONC_CFLAGS)
+PLATFORM_FLAGS = -D NO_SSL_DL=1
+mg44_LDADD = ${PTHREAD_LIBS} ${JSONC_LIBS} -lcrypt -lssl
+
+endif
+
+
+mg44_CFLAGS = \
+  -D MG_LEGACY_INTERFACE=1 \
+  -I ${srcdir}/civetweb \
+  ${PLATFORM_FLAGS} \
+  ${JSONC_CFLAGS} \
+  ${PTHREAD_CFLAGS}
 
 mg44_SOURCES = \
   main.c \
-  mongoose.c \
-  mongoose.h
+  civetweb/civetweb.c \
+  civetweb/civetweb.h \
+  civetweb/handle_form.inl \
+  civetweb/md5.inl \
+  civetweb/sha1.inl \
+  civetweb/hostcheck.inl \
+  civetweb/openssl_hostname_validation.inl
 
-endif
 
 

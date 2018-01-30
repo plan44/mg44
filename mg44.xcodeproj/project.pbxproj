@@ -8,8 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		ED369985178C1B4200376405 /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = ED369984178C1B4200376405 /* main.c */; };
-		ED369987178C1B4200376405 /* mg44.1 in CopyFiles */ = {isa = PBXBuildFile; fileRef = ED369986178C1B4200376405 /* mg44.1 */; };
-		ED5E87B91E8D69FA00FC8597 /* mongoose.c in Sources */ = {isa = PBXBuildFile; fileRef = ED5E87B71E8D69FA00FC8597 /* mongoose.c */; };
+		ED8A99BA2020FCE40069EBF6 /* civetweb.c in Sources */ = {isa = PBXBuildFile; fileRef = ED8A99B62020FCE40069EBF6 /* civetweb.c */; };
+		ED8A99BE2021004B0069EBF6 /* libcrypto.1.0.0.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = ED8A99BC2021004B0069EBF6 /* libcrypto.1.0.0.dylib */; };
+		ED8A99BF2021004B0069EBF6 /* libssl.1.0.0.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = ED8A99BD2021004B0069EBF6 /* libssl.1.0.0.dylib */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -19,7 +20,6 @@
 			dstPath = /usr/share/man/man1/;
 			dstSubfolderSpec = 0;
 			files = (
-				ED369987178C1B4200376405 /* mg44.1 in CopyFiles */,
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 		};
@@ -28,9 +28,17 @@
 /* Begin PBXFileReference section */
 		ED369981178C1B4200376405 /* mg44 */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mg44; sourceTree = BUILT_PRODUCTS_DIR; };
 		ED369984178C1B4200376405 /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; lineEnding = 0; path = main.c; sourceTree = "<group>"; };
-		ED369986178C1B4200376405 /* mg44.1 */ = {isa = PBXFileReference; lastKnownFileType = text.man; path = mg44.1; sourceTree = "<group>"; };
-		ED5E87B71E8D69FA00FC8597 /* mongoose.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = mongoose.c; sourceTree = "<group>"; };
-		ED5E87B81E8D69FA00FC8597 /* mongoose.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = mongoose.h; sourceTree = "<group>"; };
+		ED8A99AF2020FBEB0069EBF6 /* configure.ac */ = {isa = PBXFileReference; lastKnownFileType = text; path = configure.ac; sourceTree = "<group>"; };
+		ED8A99B02020FBEB0069EBF6 /* Makefile.am */ = {isa = PBXFileReference; lastKnownFileType = text; path = Makefile.am; sourceTree = "<group>"; };
+		ED8A99B32020FCE40069EBF6 /* civetweb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = civetweb.h; sourceTree = "<group>"; };
+		ED8A99B42020FCE40069EBF6 /* openssl_hostname_validation.inl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = openssl_hostname_validation.inl; sourceTree = "<group>"; };
+		ED8A99B52020FCE40069EBF6 /* hostcheck.inl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = hostcheck.inl; sourceTree = "<group>"; };
+		ED8A99B62020FCE40069EBF6 /* civetweb.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = civetweb.c; sourceTree = "<group>"; };
+		ED8A99B72020FCE40069EBF6 /* md5.inl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = md5.inl; sourceTree = "<group>"; };
+		ED8A99B82020FCE40069EBF6 /* sha1.inl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = sha1.inl; sourceTree = "<group>"; };
+		ED8A99B92020FCE40069EBF6 /* handle_form.inl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = handle_form.inl; sourceTree = "<group>"; };
+		ED8A99BC2021004B0069EBF6 /* libcrypto.1.0.0.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libcrypto.1.0.0.dylib; path = ../../../../../../../../../usr/local/Cellar/openssl/1.0.2k/lib/libcrypto.1.0.0.dylib; sourceTree = "<group>"; };
+		ED8A99BD2021004B0069EBF6 /* libssl.1.0.0.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libssl.1.0.0.dylib; path = ../../../../../../../../../usr/local/Cellar/openssl/1.0.2k/lib/libssl.1.0.0.dylib; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -38,6 +46,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				ED8A99BE2021004B0069EBF6 /* libcrypto.1.0.0.dylib in Frameworks */,
+				ED8A99BF2021004B0069EBF6 /* libssl.1.0.0.dylib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -47,8 +57,11 @@
 		ED369978178C1B4200376405 = {
 			isa = PBXGroup;
 			children = (
+				ED8A99AF2020FBEB0069EBF6 /* configure.ac */,
+				ED8A99B02020FBEB0069EBF6 /* Makefile.am */,
 				ED369983178C1B4200376405 /* source */,
 				ED369982178C1B4200376405 /* Products */,
+				ED8A99BB2021004A0069EBF6 /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -63,12 +76,33 @@
 		ED369983178C1B4200376405 /* source */ = {
 			isa = PBXGroup;
 			children = (
-				ED5E87B71E8D69FA00FC8597 /* mongoose.c */,
-				ED5E87B81E8D69FA00FC8597 /* mongoose.h */,
+				ED8A99B12020FCE40069EBF6 /* civetweb */,
 				ED369984178C1B4200376405 /* main.c */,
-				ED369986178C1B4200376405 /* mg44.1 */,
 			);
 			name = source;
+			sourceTree = "<group>";
+		};
+		ED8A99B12020FCE40069EBF6 /* civetweb */ = {
+			isa = PBXGroup;
+			children = (
+				ED8A99B62020FCE40069EBF6 /* civetweb.c */,
+				ED8A99B32020FCE40069EBF6 /* civetweb.h */,
+				ED8A99B42020FCE40069EBF6 /* openssl_hostname_validation.inl */,
+				ED8A99B52020FCE40069EBF6 /* hostcheck.inl */,
+				ED8A99B72020FCE40069EBF6 /* md5.inl */,
+				ED8A99B82020FCE40069EBF6 /* sha1.inl */,
+				ED8A99B92020FCE40069EBF6 /* handle_form.inl */,
+			);
+			path = civetweb;
+			sourceTree = "<group>";
+		};
+		ED8A99BB2021004A0069EBF6 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				ED8A99BC2021004B0069EBF6 /* libcrypto.1.0.0.dylib */,
+				ED8A99BD2021004B0069EBF6 /* libssl.1.0.0.dylib */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -122,7 +156,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				ED5E87B91E8D69FA00FC8597 /* mongoose.c in Sources */,
+				ED8A99BA2020FCE40069EBF6 /* civetweb.c in Sources */,
 				ED369985178C1B4200376405 /* main.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -212,11 +246,16 @@
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
 					"NO_CGI=1",
+					"NO_SSL_DL=1",
+					"MG_LEGACY_INTERFACE=1",
 				);
-				HEADER_SEARCH_PATHS = "$(SRCROOT)/../libmongoose";
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"/usr/local/Cellar/openssl/1.0.2k/include\"",
+				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(SRCROOT)/../../../../../../Library/Developer/Xcode/DerivedData/mg44-broynpmjlhimixcrexchdfabdrkl/Build/Products/Debug",
+					"\"/usr/local/Cellar/openssl/1.0.2k/lib\"",
 				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
@@ -228,11 +267,16 @@
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
 					"NO_CGI=1",
+					"NO_SSL_DL=1",
+					"MG_LEGACY_INTERFACE=1",
 				);
-				HEADER_SEARCH_PATHS = "$(SRCROOT)/../libmongoose";
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"/usr/local/Cellar/openssl/1.0.2k/include\"",
+				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(SRCROOT)/../../../../../../Library/Developer/Xcode/DerivedData/mg44-broynpmjlhimixcrexchdfabdrkl/Build/Products/Debug",
+					"\"/usr/local/Cellar/openssl/1.0.2k/lib\"",
 				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
