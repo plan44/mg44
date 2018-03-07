@@ -503,7 +503,15 @@ static void upload_occurred(struct mg_connection *conn, const char *file_name)
 }
 
 
+#if USE_LIBMONGOOSE
 static int begin_request(struct mg_connection *conn)
+{
+  request_handler(conn, NULL);
+}
+#endif
+
+
+static int request_handler(struct mg_connection *conn, void *cbdata)
 {
   #define MESSAGE_DEF_SIZE 4096
   char refTok[33];
@@ -873,18 +881,25 @@ static void start_mongoose(int argc, char *argv[]) {
   // Install log callback
   callbacks.log_message = &log_message;
   // Install request handler callback to catch API calls
+  #if USE_LIBMONGOOSE
+  // Install request handler callback to catch API calls
+  // Note: Cannot be used any more from civetweb 1.7 onwards because it does not any longer check http auth
   callbacks.begin_request = &begin_request;
+  #endif
   // Install handler to catch uploads
   callbacks.upload = &upload_occurred;
-
+  // start
   ctx = mg_start(&callbacks, NULL, (const char **) options);
   for (i = 0; options[i] != NULL; i++) {
     free(options[i]);
   }
-
   if (ctx == NULL) {
     die("%s", "Failed to start Mongoose.");
   }
+  #if !USE_LIBMONGOOSE
+  // register handler
+  mg_set_request_handler(ctx, "/", request_handler, NULL);
+  #endif
 }
 
 
