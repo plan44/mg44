@@ -5969,6 +5969,13 @@ pull_inner(FILE *fp,
            int *errCause)
 {
   int nread, err = 0;
+	int polltmo;
+	if (timeout<0) {
+		polltmo = -1;
+	}
+	else {
+		polltmo = (int)(timeout * 1000.0);
+	}
 
 #ifdef _WIN32
   typedef int len_t;
@@ -6030,12 +6037,11 @@ pull_inner(FILE *fp,
 
     struct pollfd pfd[1];
     int pollres;
-
     pfd[0].fd = conn->client.sock;
     pfd[0].events = POLLIN;
     pollres = mg_poll(pfd,
                       1,
-                      (int)(timeout * 1000.0),
+                      polltmo,
                       &(conn->phys_ctx->stop_flag));
     if (conn->phys_ctx->stop_flag) {
       return -2;
@@ -6075,7 +6081,7 @@ pull_inner(FILE *fp,
     pfd[0].events = POLLIN;
     pollres = mg_poll(pfd,
                       1,
-                      (int)(timeout * 1000.0),
+                      polltmo,
                       &(conn->phys_ctx->stop_flag));
     if (conn->phys_ctx->stop_flag) {
       return -2;
@@ -6161,25 +6167,26 @@ pull_all(FILE *fp, struct mg_connection *conn, char *buf, int len, double timeou
 {
   int n, nread = 0;
   uint64_t start_time = 0, now = 0, timeout_ns = 0;
+	double tmo = timeout;
 
-    if (timeout==TMO_DEFAULT) {
-        // no call-level timeout, use connection level
-        timeout = conn->client_timeout;
-    }
-    if (timeout==TMO_DEFAULT && conn->dom_ctx->config[REQUEST_TIMEOUT]) {
-        // no timeout defined so far, use domain config level timeout
-        timeout = atoi(conn->dom_ctx->config[REQUEST_TIMEOUT]) / 1000.0;
-    }
-    if (timeout >= 0.0) {
-        start_time = mg_get_current_time_ns();
-        timeout_ns = (uint64_t)(timeout * 1.0E9);
-    }
-    else if (timeout<0) {
-        timeout = -1; // unify, all negative values mean NEVER timeout at this point (which must be <0 for mg_poll)
-    }
+	if (tmo==TMO_DEFAULT) {
+		// no call-level timeout, use connection level
+		tmo = conn->client_timeout;
+	}
+	if (tmo==TMO_DEFAULT && conn->dom_ctx->config[REQUEST_TIMEOUT]) {
+		// no timeout defined so far, use domain config level timeout
+		tmo = atoi(conn->dom_ctx->config[REQUEST_TIMEOUT]) / 1000.0;
+	}
+	if (tmo >= 0.0) {
+		start_time = mg_get_current_time_ns();
+		timeout_ns = (uint64_t)(tmo * 1.0E9);
+	}
+	else if (tmo<0) {
+		tmo = -1; // unify, all negative values (including TMO_SOMETHING) mean NEVER timeout in pull_inner() at this point
+	}
 
   while ((len > 0) && (conn->phys_ctx->stop_flag == 0)) {
-    n = pull_inner(fp, conn, buf + nread, len, timeout, errCause);
+    n = pull_inner(fp, conn, buf + nread, len, tmo, errCause);
     if (n == -2) {
       if (nread == 0) {
         nread = -1; /* Propagate the error */
@@ -6187,10 +6194,10 @@ pull_all(FILE *fp, struct mg_connection *conn, char *buf, int len, double timeou
       break;
     } else if (n == -1) {
       /* timeout */
-      if (timeout < 0) {
+      if (tmo < 0) {
         continue; /* no timeout at all, keep pulling */
       }
-      else if (timeout >= 0.0) {
+      else if (tmo >= 0.0) {
         now = mg_get_current_time_ns();
         if ((now - start_time) <= timeout_ns) {
           continue;
@@ -6198,6 +6205,7 @@ pull_all(FILE *fp, struct mg_connection *conn, char *buf, int len, double timeou
       }
       /* now, this is a real timeout */
       if (errCause) *errCause = EC_TIMEOUT;
+      nread = -1; /* propagate as error */
       break;
     } else if (n == 0) {
       break; /* No more data to read */
@@ -6205,6 +6213,9 @@ pull_all(FILE *fp, struct mg_connection *conn, char *buf, int len, double timeou
       conn->consumed_content += n;
       nread += n;
       len -= n;
+			if (timeout==TMO_SOMETHING) {
+				break; /* we got something, return it */
+			}
     }
   }
 
@@ -6306,6 +6317,10 @@ mg_read_inner(struct mg_connection *conn, void *buf, size_t len, double timeout,
       conn->consumed_content += buffered_len;
       nread += buffered_len;
       buf = (char *)buf + buffered_len;
+			if (timeout==TMO_SOMETHING) {
+				/* return buffered data immediately */
+				return (int)nread;
+			}
     }
 
     /* We have returned all buffered data. Read new data from the remote
@@ -6394,6 +6409,10 @@ mg_read_ex(struct mg_connection *conn, void *buf, size_t len, double timeout, in
             /* Protocol violation */
             return -1;
           }
+          if (timeout==TMO_SOMETHING) {
+            /* treat end of chunk like a pause (even if next chunk has already begun) */
+            break;
+          }
         }
 
       } else {
@@ -6405,7 +6424,13 @@ mg_read_ex(struct mg_connection *conn, void *buf, size_t len, double timeout, in
 
         for (i = 0; i < ((int)sizeof(lenbuf) - 1); i++) {
           conn->content_len++;
-          lenbuf[i] = mg_getc(conn);
+          int ec = 0;
+          int res = mg_read_inner(conn, &lenbuf[i], 1, timeout, &ec);
+          if (i==0 && res<0 && ec==EC_TIMEOUT) {
+            // timeout in first char of new chunk is ok and means "no new chunk yet"
+            if (errCause) *errCause = ec;
+            return res;
+          }
           if ((i > 0) && (lenbuf[i] == '\r')
               && (lenbuf[i - 1] != '\r')) {
             continue;
@@ -16263,7 +16288,13 @@ get_response(struct mg_connection *conn, char *ebuf, size_t ebuf_len, int *err)
   /* Message is a valid response */
 
   /* Do we know the content length? */
-  if ((cl = get_header(conn->response_info.http_headers,
+	if (conn->response_info.status_code==304) {
+		/* 304/not modified responses MAY carry a Content-Length header
+		   indicating the length of the document, which is NOT sent.
+		   So we MUST ignore the content length for actual data transfer
+		   purposes and imply 0 here. */
+		conn->content_len = 0;
+	} else if ((cl = get_header(conn->response_info.http_headers,
                        conn->response_info.num_headers,
                        "Content-Length")) != NULL) {
     /* Request/response has content length set */
@@ -16282,7 +16313,7 @@ get_response(struct mg_connection *conn, char *ebuf, size_t ebuf_len, int *err)
     /* Publish the content length back to the response info. */
     conn->response_info.content_length = conn->content_len;
 
-    /* TODO: check if it is still used in response_info */
+    /* TODO: check if it is still used in request_info */
     conn->request_info.content_length = conn->content_len;
 
   } else if ((cl = get_header(conn->response_info.http_headers,
@@ -16291,9 +16322,13 @@ get_response(struct mg_connection *conn, char *ebuf, size_t ebuf_len, int *err)
              && !mg_strcasecmp(cl, "chunked")) {
     conn->is_chunked = 1;
     conn->content_len = -1; /* unknown content length */
-  } else {
-    conn->content_len = -1; /* unknown content length */
-  }
+	} else if (conn->response_info.status_code==204) {
+		/* 204 implies no content, unless explicit Content-Length
+		   header or Transfer-Encoding:chunked has indicated otherwise */
+		conn->content_len = 0;
+	} else {
+		conn->content_len = -1; /* unknown content length */
+	}
 
   conn->connection_type = CONNECTION_TYPE_RESPONSE; /* Valid response */
   return 1;
