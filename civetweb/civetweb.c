@@ -11175,12 +11175,22 @@ static void
 do_ssi_exec(struct mg_connection *conn, char *tag)
 {
   char cmd[1024] = "";
+  char env[1024] = "";
   struct mg_file file = STRUCT_FILE_INITIALIZER;
+  int truncated;
 
   if (sscanf(tag, " \"%1023[^\"]\"", cmd) != 1) {
     mg_cry_internal(conn, "Bad SSI #exec: [%s]", tag);
   } else {
     cmd[1023] = 0;
+    if (conn->request_info.query_string) {
+      mg_snprintf(conn, &truncated, env, 1023, "QUERY_STRING=%s", conn->request_info.query_string);
+    }
+    putenv(env);
+    if (conn->request_info.request_uri) {
+      mg_snprintf(conn, &truncated, env, 1023, "PATH_INFO=%s", conn->request_info.request_uri);
+    }
+    putenv(env);
     if ((file.access.fp = popen(cmd, "r")) == NULL) {
       mg_cry_internal(conn,
                       "Cannot SSI #exec: [%s]: %s",
