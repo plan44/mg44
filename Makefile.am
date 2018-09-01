@@ -10,7 +10,7 @@ mg44_LDADD = ${PTHREAD_LIBS} -ljson-c -lcrypt
 
 else
 
-PLATFORM_FLAGS = -D NO_SSL_DL=1
+PLATFORM_FLAGS = -D NO_SSL_DL=1 -D USE_IPV6=1
 mg44_LDADD = ${PTHREAD_LIBS} ${JSONC_LIBS} -lcrypt -lssl
 
 endif
