@@ -1658,6 +1658,10 @@ struct ssl_func {
   void (*ptr)(void); /* Function pointer */
 };
 
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+#define OPENSSL_API_1_1
+#endif
+
 #ifdef OPENSSL_API_1_1
 
 /* OpenSSL >=1.1 */
@@ -10020,7 +10024,11 @@ read_message(FILE *fp,
   if (conn->dom_ctx->config[REQUEST_TIMEOUT]) {
     /* value of request_timeout is in seconds, config in milliseconds */
     request_timeout = atof(conn->dom_ctx->config[REQUEST_TIMEOUT]) / 1000.0;
-  } else {
+  } else if (conn->client_timeout>=0) {
+    /* use client timeout, if it is set (is NEVER set when this is not a client connection!) */
+    request_timeout = conn->client_timeout;
+  }
+  else {
     request_timeout = -1.0;
   }
   if (conn->handled_requests > 0) {
@@ -11204,9 +11212,10 @@ do_ssi_exec(struct mg_connection *conn, char *tag)
         else if (*iP=='Q') {
           if (conn->request_info.query_string) {
             // replace $Q by query string, and replace '&' by ':'
-            n = strlen(conn->request_info.query_string); if (n>room) n=room;
             const char *qP = conn->request_info.query_string;
-            for (size_t i=0; i<n; i++) {
+            size_t i;
+            n = strlen(conn->request_info.query_string); if (n>room) n=room;
+            for (i=0; i<n; i++) {
               if (*qP=='&')
                 *sP++ = ':';
               else
@@ -15704,6 +15713,7 @@ mg_connect_client_impl(const struct mg_client_options *client_options,
   union usa sa;
   struct sockaddr *psa;
   socklen_t len;
+  int res;
 
   unsigned max_req_size =
       (unsigned)atoi(config_options[MAX_REQUEST_SIZE].default_value);
@@ -15859,18 +15869,29 @@ mg_connect_client_impl(const struct mg_client_options *client_options,
         }
       }
       else {
-        SSL_CTX_load_verify_locations(conn->client_ssl_ctx,
-                                      client_options->server_cert,
-                                      NULL);
-        mg_snprintf(NULL,
-                    NULL, /* No truncation check for ebuf */
-                    ebuf,
-                    ebuf_len,
-                    "Error setting CA file for server certificate verification: %s", ERR_error_string(ERR_get_error(), NULL));
-        SSL_CTX_free(conn->client_ssl_ctx);
-        closesocket(sock);
-        mg_free(conn);
-        return NULL;
+        if (client_options->server_cert[0]=='=') {
+          // special syntax for specifying a CAFile: prefix with "="
+          res = SSL_CTX_load_verify_locations(conn->client_ssl_ctx,
+                                              client_options->server_cert+1, // CAFile prefixed with "="
+                                              NULL); // no CAPath
+        }
+        else {
+          // no special prefix: path passed is a CAPath
+          res = SSL_CTX_load_verify_locations(conn->client_ssl_ctx,
+                                              NULL, // no CAFile
+                                              client_options->server_cert); // CAPath
+        }
+        if (res!=1) {
+          mg_snprintf(NULL,
+                      NULL, /* No truncation check for ebuf */
+                      ebuf,
+                      ebuf_len,
+                      "Error setting CA file for server certificate verification: %s", ERR_error_string(ERR_get_error(), NULL));
+          SSL_CTX_free(conn->client_ssl_ctx);
+          closesocket(sock);
+          mg_free(conn);
+          return NULL;
+        }
       }
 #ifdef OPENSSL_API_1_1
       // OpenSSL 1.1 can do hostname validation
