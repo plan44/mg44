@@ -2412,6 +2412,7 @@ enum {
   ERROR_LOG_FILE,
   ENABLE_KEEP_ALIVE,
   REQUEST_TIMEOUT,
+  FILES_CHANGED_AT_RESTART,
   KEEP_ALIVE_TIMEOUT,
 #if defined(USE_WEBSOCKET)
   WEBSOCKET_TIMEOUT,
@@ -2519,6 +2520,7 @@ static const struct mg_option config_options[] = {
     {"error_log_file", MG_CONFIG_TYPE_FILE, NULL},
     {"enable_keep_alive", MG_CONFIG_TYPE_BOOLEAN, "no"},
     {"request_timeout_ms", MG_CONFIG_TYPE_NUMBER, "30000"},
+    {"files_changed_at_restart", MG_CONFIG_TYPE_BOOLEAN, "no"},
     {"keep_alive_timeout_ms", MG_CONFIG_TYPE_NUMBER, "500"},
 #if defined(USE_WEBSOCKET)
     {"websocket_timeout_ms", MG_CONFIG_TYPE_NUMBER, NULL},
@@ -5373,7 +5375,7 @@ mg_stat(const struct mg_connection *conn,
      * runtime,
      * so every mg_fopen call may return different data */
     /* last_modified = conn->phys_ctx.start_time;
-     * May be used it the data does not change during runtime. This
+     * May be used if the data does not change during runtime. This
      * allows
      * browser caching. Since we do not know, we have to assume the file
      * in memory may change. */
@@ -5401,8 +5403,14 @@ mg_stat(const struct mg_connection *conn,
     if (creation_time > filep->last_modified) {
       filep->last_modified = creation_time;
     }
+    /* check option to force all files to appear new after a server restart */
+    if (conn->ctx && mg_strcasecmp(conn->ctx->config[FILES_CHANGED_AT_RESTART], "yes")==0) {
+      // consider all files not older than start of this server
+      if (filep->modification_time < conn->phys_ctx->start_time) {
+        filep->modification_time = conn->phys_ctx->start_time;
+      }
+    }
 
-    filep->is_directory = info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
     return 1;
   }
 
@@ -5967,6 +5975,13 @@ mg_stat(const struct mg_connection *conn,
   if (0 == stat(path, &st)) {
     filep->size = (uint64_t)(st.st_size);
     filep->last_modified = st.st_mtime;
+    /* check option to force all files to appear new after a server restart */
+    if (conn && conn->phys_ctx && mg_strcasecmp(conn->dom_ctx->config[FILES_CHANGED_AT_RESTART], "yes")==0) {
+      // consider all files not older than start of this server
+      if (filep->last_modified < conn->phys_ctx->start_time) {
+        filep->last_modified = conn->phys_ctx->start_time;
+      }
+    }
     filep->is_directory = S_ISDIR(st.st_mode);
     return 1;
   }
@@ -11959,8 +11974,56 @@ do_ssi_exec(struct mg_connection *conn, char *tag)
   if (sscanf(tag, " \"%1023[^\"]\"", cmd) != 1) {
     mg_cry_internal(conn, "Bad SSI #exec: [%s]", tag);
   } else {
-    cmd[1023] = 0;
-    if ((file.access.fp = popen(cmd, "r")) == NULL) {
+    // susbstitute $P with path and $Q with query string
+    char scmd[1024] = "";
+    char *sP = scmd;
+    const char *cP = cmd;
+    size_t room = 1023;
+    while (*cP) {
+      const char *iP = strchr(cP, '$');
+      size_t n;
+      if (iP) {
+        n = iP-cP; if (n>room) n=room;
+        strncpy(sP, cP, n); sP += n; room -= n; cP += n;
+        iP++;
+        if (*iP=='P') {
+          if (conn->request_info.request_uri) {
+            // replace $P by request uri
+            n = strlen(conn->request_info.request_uri); if (n>room) n=room;
+            strncpy(sP, conn->request_info.request_uri, n); sP += n; room -= n;
+          }
+          cP += 2;
+        }
+        else if (*iP=='Q') {
+          if (conn->request_info.query_string) {
+            // replace $Q by query string, and replace '&' by ':'
+            const char *qP = conn->request_info.query_string;
+            size_t i;
+            n = strlen(conn->request_info.query_string); if (n>room) n=room;
+            for (i=0; i<n; i++) {
+              if (*qP=='&')
+                *sP++ = ':';
+              else
+                *sP++ = *qP;
+              qP++;
+              room--;
+            }
+          }
+          cP += 2;
+        }
+        else {
+          *(sP++) = '$'; room--;
+          cP++;
+        }
+      }
+      else {
+        n = strlen(cP); if (n>room) n=room;
+        strncpy(sP, cP, n); sP += n; room -= n; cP += n;
+        break;
+      }
+    }
+    *sP = 0;
+    if ((file.access.fp = popen(scmd, "r")) == NULL) {
       mg_cry_internal(conn,
                       "Cannot SSI #exec: [%s]: %s",
                       cmd,
@@ -12135,6 +12198,10 @@ handle_ssi_file_request(struct mg_connection *conn,
                        path,
                        strerror(ERRNO));
   } else {
+        // determine mime type from ssi file's extension
+        struct vec mime_vec;
+        get_mime_type(conn, path, &mime_vec);
+        // deliver SSI file
     conn->must_close = 1;
     gmt_time_string(date, sizeof(date), &curtime);
     fclose_on_exec(&filep->access, conn);
@@ -12144,12 +12211,13 @@ handle_ssi_file_request(struct mg_connection *conn,
     mg_printf(conn,
               "%s%s%s"
               "Date: %s\r\n"
-              "Content-Type: text/html\r\n"
+              "Content-Type: %.*s\r\n"
               "Connection: %s\r\n\r\n",
               cors1,
               cors2,
               cors3,
               date,
+                  (int) mime_vec.len, mime_vec.ptr,
               suggest_connection_header(conn));
     send_ssi_file(conn, path, filep, 0);
     (void)mg_fclose(&filep->access); /* Ignore errors for readonly files */
