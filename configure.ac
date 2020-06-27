@@ -11,31 +11,26 @@ AC_PROG_CXX
 
 AC_CONFIG_FILES([Makefile])
 
-dnl # options
+##### OPTIONS
 
-P44_BUILD_RPI="no"
-AC_ARG_ENABLE([p44buildrpi],
-    [AC_HELP_STRING([--enable-p44buildrpi],
-                    [plan44 build for Raspberry Pi (default: no)]) ],
-    [
-        if test "x$enableval" = "xno"; then
-            P44_BUILD_RPI="no"
-        elif test "x$enableval" = "xyes"; then
-            P44_BUILD_RPI="yes"
-        fi
-    ]
+AC_ARG_ENABLE(
+  [debug],
+  [AC_HELP_STRING([--enable-debug], [Debug build with extra debugging code])]
 )
-if (test "x$P44_BUILD_RPI" = "xyes"); then
-    AC_DEFINE([P44_BUILD_RPI], [1], [plan44 RPi build])
-fi
-AM_CONDITIONAL([P44_BUILD_RPI], [test "x$P44_BUILD_RPI" = "xyes"])
+AM_CONDITIONAL([DEBUG], [test "x$enable_debug" = xyes])
 
+
+AC_ARG_ENABLE(
+  [p44buildrpi],
+  [AC_HELP_STRING([--enable-p44buildrpi], [legacy plan44 build for Raspian RPi])]
+)
+AM_CONDITIONAL([P44_BUILD_RPI], [test "x$enable_p44buildow" = xyes])
 
 PKG_PROG_PKG_CONFIG
 
 
 AM_COND_IF([P44_BUILD_RPI], [], [
-  dnl # can check modules only if not P44_BUILD_RPI
+  # can check modules only if not P44_BUILD_RPI
   PKG_CHECK_MODULES([JSONC], [json-c >= 0.10 ], [], [
         AC_MSG_ERROR([$JSON_PKG_ERRORS])
   ])
@@ -48,7 +43,7 @@ AC_CHECK_LIB(dl, dlopen, [], [AC_MSG_ERROR([Could not find libdl with dlopen])])
 AC_CHECK_LIB(pthread, pthread_create, [], [AC_MSG_ERROR([Could not find libpthread with pthread_create])])
 
 AM_COND_IF([P44_BUILD_RPI], [], [
-  dnl # can check libs only if not P44_BUILD_RPI
+  # can check libs only if not P44_BUILD_RPI
   AC_CHECK_LIB(json-c, json_tokener_get_error, [], [AC_MSG_ERROR([Could not find JSON-C / libjson0 with json_tokener_get_error supported (>=0.10)])])
   AC_CHECK_LIB(ssl, TLSv1_client_method, [], [AC_MSG_ERROR([Could not find libssl with TLSv1_client_method])])
   AC_CHECK_LIB(crypto, SHA1_Init, [], [AC_MSG_ERROR([Could not find libcrypto with SHA1_Init])])

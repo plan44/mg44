@@ -15,10 +15,18 @@ mg44_LDADD = ${PTHREAD_LIBS} ${JSONC_LIBS} -lcrypt -lssl
 
 endif
 
+if DEBUG
+mg44_DEBUG = -D DEBUG=1
+else
+mg44_DEBUG =
+endif
+
+
 
 mg44_CFLAGS = \
   -D MG_LEGACY_INTERFACE=1 \
   -I ${srcdir}/civetweb \
+  ${mg44_DEBUG} \
   ${PLATFORM_FLAGS} \
   ${JSONC_CFLAGS} \
   ${PTHREAD_CFLAGS}
