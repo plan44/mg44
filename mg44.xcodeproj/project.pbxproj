@@ -45,8 +45,6 @@
 		ED8A99AF2020FBEB0069EBF6 /* configure.ac */ = {isa = PBXFileReference; lastKnownFileType = text; path = configure.ac; sourceTree = "<group>"; };
 		ED8A99B02020FBEB0069EBF6 /* Makefile.am */ = {isa = PBXFileReference; lastKnownFileType = text; path = Makefile.am; sourceTree = "<group>"; };
 		ED8A99B32020FCE40069EBF6 /* civetweb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = civetweb.h; sourceTree = "<group>"; };
-		ED8A99B42020FCE40069EBF6 /* openssl_hostname_validation.inl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = openssl_hostname_validation.inl; sourceTree = "<group>"; };
-		ED8A99B52020FCE40069EBF6 /* hostcheck.inl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = hostcheck.inl; sourceTree = "<group>"; };
 		ED8A99B62020FCE40069EBF6 /* civetweb.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = civetweb.c; sourceTree = "<group>"; };
 		ED8A99B72020FCE40069EBF6 /* md5.inl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = md5.inl; sourceTree = "<group>"; };
 		ED8A99B82020FCE40069EBF6 /* sha1.inl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = sha1.inl; sourceTree = "<group>"; };
@@ -103,8 +101,6 @@
 			children = (
 				ED8A99B62020FCE40069EBF6 /* civetweb.c */,
 				ED8A99B32020FCE40069EBF6 /* civetweb.h */,
-				ED8A99B42020FCE40069EBF6 /* openssl_hostname_validation.inl */,
-				ED8A99B52020FCE40069EBF6 /* hostcheck.inl */,
 				ED8A99B72020FCE40069EBF6 /* md5.inl */,
 				ED8A99B82020FCE40069EBF6 /* sha1.inl */,
 				ED8A99B92020FCE40069EBF6 /* handle_form.inl */,

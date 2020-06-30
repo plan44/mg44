@@ -37,9 +37,7 @@ mg44_SOURCES = \
   civetweb/civetweb.h \
   civetweb/handle_form.inl \
   civetweb/md5.inl \
-  civetweb/sha1.inl \
-  civetweb/hostcheck.inl \
-  civetweb/openssl_hostname_validation.inl
+  civetweb/sha1.inl
 
 
 
