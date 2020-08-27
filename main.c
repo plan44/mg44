@@ -366,7 +366,7 @@ static size_t json_api_call(char **messageBufP, size_t maxAnswerBytes)
     while(!done) {
       if (answerSize>=maxAnswerBytes) {
         // enlarge buffer
-        maxAnswerBytes += maxAnswerBytes/2; // increase by half of current size
+        if (maxAnswerBytes<0x10000) maxAnswerBytes*=2; else maxAnswerBytes+=0x8000; // double until 64k, then add 32k at a time
         *messageBufP = realloc(*messageBufP, maxAnswerBytes);
       }
       p = *messageBufP+answerSize;
@@ -559,12 +559,13 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
   }
   if (apiCall || cmdlineCall) {
     // JSON API call to deliver to a daemon or the commandline
-    message = malloc(MESSAGE_DEF_SIZE);
+    size_t msgBufSz = MESSAGE_DEF_SIZE;
+    message = malloc(msgBufSz);
     // create pure JSON request
     // { "method" : "GET", "uri" : "/myuri" }
     // { "method" : "POST", "uri" : "/myuri", ["uri_params":{}] "data" : <{ JSON payload }>}
     message_length = snprintf(
-      message, MESSAGE_DEF_SIZE,
+      message, msgBufSz,
       "{ \"method\":\"%s\", \"uri\":\"%s\"",
       mg_get_request_info(conn)->request_method,
       mg_get_request_info(conn)->local_uri+prefix_length // rest of URI
@@ -573,7 +574,7 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
     // check query variables
     q = mg_get_request_info(conn)->query_string;
     if (q && *q) {
-      message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,", \"uri_params\": {");
+      message_length += snprintf(message+message_length, msgBufSz-message_length,", \"uri_params\": {");
       firstvar = 1;
       // parse variables
       while (q && *q) {
@@ -582,9 +583,9 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
         while (*q && *q!='=' && *q!='&') q++; // name end
         // add name and begin of string
         if (!firstvar)
-          message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,", ");
+          message_length += snprintf(message+message_length, msgBufSz-message_length,", ");
         name_length = (int)(q-qvar);
-        message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"\"%.*s\": ", (int)name_length, qvar);
+        message_length += snprintf(message+message_length, msgBufSz-message_length,"\"%.*s\": ", (int)name_length, qvar);
         firstvar = 0;
         // check value
         if (*q=='=') {
@@ -613,12 +614,12 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
           value_length = q-qvar;
           if (numeric) {
             // just copy
-            i = mg_url_decode(qvar, (int)value_length, message+message_length, (int)(MESSAGE_DEF_SIZE-message_length), 0);
+            i = mg_url_decode(qvar, (int)value_length, message+message_length, (int)(msgBufSz-message_length), 0);
             if (i>0) message_length += i;
           }
           else {
             // string, quote and escape
-            message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"\""); // string lead-in
+            message_length += snprintf(message+message_length, msgBufSz-message_length,"\""); // string lead-in
             // decode into intermediate buffer
             valbuf = malloc(value_length*2); // worst case is that every char needs to be escaped
             if (valbuf) {
@@ -626,7 +627,7 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
               if (i>0) {
                 // now process decoded string and escape for JSON if needed
                 for (p=valbuf; i>0; --i, ++p) {
-                  if (message_length>=MESSAGE_DEF_SIZE-2) break; // no room for at least 2 chars any more
+                  if (message_length>=msgBufSz-2) break; // no room for at least 2 chars any more
                   c = *p;
                   if (*p=='\\' || *p=='"' || *p<0x20) {
                     // need escaping
@@ -645,17 +646,17 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
               }
               free(valbuf);
             }
-            message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"\""); // string lead-out
+            message_length += snprintf(message+message_length, msgBufSz-message_length,"\""); // string lead-out
           }
         }
         else {
           // no value
-          message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length,"null");
+          message_length += snprintf(message+message_length, msgBufSz-message_length,"null");
         }
         if (*q) q++; // skip var separator
       }
       // end of query params
-      message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length," }");
+      message_length += snprintf(message+message_length, msgBufSz-message_length," }");
     }
     // add data if PUT or POST
     if (
@@ -668,30 +669,43 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
         int numfiles = mg_upload(conn, uploadDir);
         if (numfiles>=1) {
           // pass last uploaded file name with JSON query
-          message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length, ", \"uploadedfile\": \"%s\"", lastUploadedFilePath);
+          message_length += snprintf(message+message_length, msgBufSz-message_length, ", \"uploadedfile\": \"%s\"", lastUploadedFilePath);
           DEBUG_TRACE(("uploaded %d files, last uploaded = %s", numfiles, lastUploadedFilePath));
         }
         lastUploadedFilePath[0]=0;
       }
       else {
         // put or post carrying JSON data
-        message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length, ", \"data\": ");
+        message_length += snprintf(message+message_length, msgBufSz-message_length, ", \"data\": ");
         // get POST/PUT payload data
-        p = message+message_length;
-        size_t n = mg_read(conn, p, MESSAGE_DEF_SIZE-message_length-1);
-        size_t payloadLen = n;
-        // replace all whitespace by actual space chars (eliminating line feeds)
-        while (n>0) {
-          if (isspace(*p))
-            *p = ' ';
-          ++p;
-          --n;
+        while (1) {
+          size_t remSz = msgBufSz-message_length-1;
+          p = message+message_length; // recalculate for every iteration, as buffer might have relocated
+          size_t n = mg_read(conn, p, remSz);
+          if (n==0) {
+            // all read
+            break;
+          }
+          message_length += n;
+          remSz -= n;
+          // replace all whitespace by actual space chars (eliminating line feeds)
+          while (n>0) {
+            if (isspace(*p))
+              *p = ' ';
+            ++p;
+            --n;
+          }
+          // maybe we need more buffer space
+          if (remSz==0) {
+            // buffer exhausted
+            if (msgBufSz<0x10000) msgBufSz*=2; else msgBufSz+=0x8000; // double until 64k, then add 32k at a time
+            message = realloc(message, msgBufSz);
+          }
         }
-        message_length += payloadLen;
       }
     }
     // end of JSON object + LF
-    message_length += snprintf(message+message_length, MESSAGE_DEF_SIZE-message_length," }\n");
+    message_length += snprintf(message+message_length, msgBufSz-message_length," }\n");
     DEBUG_TRACE(("request json = %s", message));
     // abort call if csrf token is not ok
     if (csrfValPending) {
@@ -704,13 +718,13 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
     else if (apiCall) {
       // send json request, receive answer
       DEBUG_TRACE(("calling json_api_call()"));
-      message_length = json_api_call(&message, MESSAGE_DEF_SIZE);
+      message_length = json_api_call(&message, msgBufSz);
       DEBUG_TRACE(("called json_api_call() = %ld", message_length));
       message[message_length]=0; // terminate
     }
     else if (cmdlineCall) {
       DEBUG_TRACE(("calling json_cmdline_call()"));
-      message_length = json_cmdline_call(&message, MESSAGE_DEF_SIZE);
+      message_length = json_cmdline_call(&message, msgBufSz);
       DEBUG_TRACE(("called json_cmdline_call() = %ld", message_length));
       message[message_length]=0; // terminate
     }
