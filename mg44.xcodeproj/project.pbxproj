@@ -9,10 +9,8 @@
 /* Begin PBXBuildFile section */
 		ED369985178C1B4200376405 /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = ED369984178C1B4200376405 /* main.c */; };
 		ED8A99BA2020FCE40069EBF6 /* civetweb.c in Sources */ = {isa = PBXBuildFile; fileRef = ED8A99B62020FCE40069EBF6 /* civetweb.c */; };
-		ED9FF4FA24A7C975005E3025 /* libcrypto.1.1.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = ED9FF4F824A7C975005E3025 /* libcrypto.1.1.dylib */; };
-		ED9FF4FB24A7C975005E3025 /* libcrypto.1.1.dylib in Embed Libraries */ = {isa = PBXBuildFile; fileRef = ED9FF4F824A7C975005E3025 /* libcrypto.1.1.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
-		ED9FF4FC24A7C975005E3025 /* libssl.1.1.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = ED9FF4F924A7C975005E3025 /* libssl.1.1.dylib */; };
-		ED9FF4FD24A7C975005E3025 /* libssl.1.1.dylib in Embed Libraries */ = {isa = PBXBuildFile; fileRef = ED9FF4F924A7C975005E3025 /* libssl.1.1.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		ED9F9CB225F2DC84005359EC /* libcrypto.1.1.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = ED9F9CB025F2DC84005359EC /* libcrypto.1.1.dylib */; };
+		ED9F9CB325F2DC84005359EC /* libssl.1.1.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = ED9F9CB125F2DC84005359EC /* libssl.1.1.dylib */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -31,8 +29,6 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
-				ED9FF4FB24A7C975005E3025 /* libcrypto.1.1.dylib in Embed Libraries */,
-				ED9FF4FD24A7C975005E3025 /* libssl.1.1.dylib in Embed Libraries */,
 			);
 			name = "Embed Libraries";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -49,10 +45,8 @@
 		ED8A99B72020FCE40069EBF6 /* md5.inl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = md5.inl; sourceTree = "<group>"; };
 		ED8A99B82020FCE40069EBF6 /* sha1.inl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = sha1.inl; sourceTree = "<group>"; };
 		ED8A99B92020FCE40069EBF6 /* handle_form.inl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = handle_form.inl; sourceTree = "<group>"; };
-		ED8A99BC2021004B0069EBF6 /* libcrypto.1.0.0.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libcrypto.1.0.0.dylib; path = ../../../../../../../../../usr/local/Cellar/openssl/1.0.2k/lib/libcrypto.1.0.0.dylib; sourceTree = "<group>"; };
-		ED8A99BD2021004B0069EBF6 /* libssl.1.0.0.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libssl.1.0.0.dylib; path = ../../../../../../../../../usr/local/Cellar/openssl/1.0.2k/lib/libssl.1.0.0.dylib; sourceTree = "<group>"; };
-		ED9FF4F824A7C975005E3025 /* libcrypto.1.1.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libcrypto.1.1.dylib; path = "../../../../../../usr/local/Cellar/openssl@1.1/1.1.1d/lib/libcrypto.1.1.dylib"; sourceTree = "<group>"; };
-		ED9FF4F924A7C975005E3025 /* libssl.1.1.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libssl.1.1.dylib; path = "../../../../../../usr/local/Cellar/openssl@1.1/1.1.1d/lib/libssl.1.1.dylib"; sourceTree = "<group>"; };
+		ED9F9CB025F2DC84005359EC /* libcrypto.1.1.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libcrypto.1.1.dylib; path = "../../../../../../usr/local/Cellar/openssl@1.1/1.1.1h/lib/libcrypto.1.1.dylib"; sourceTree = "<group>"; };
+		ED9F9CB125F2DC84005359EC /* libssl.1.1.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libssl.1.1.dylib; path = "../../../../../../usr/local/Cellar/openssl@1.1/1.1.1h/lib/libssl.1.1.dylib"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -60,8 +54,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				ED9FF4FA24A7C975005E3025 /* libcrypto.1.1.dylib in Frameworks */,
-				ED9FF4FC24A7C975005E3025 /* libssl.1.1.dylib in Frameworks */,
+				ED9F9CB325F2DC84005359EC /* libssl.1.1.dylib in Frameworks */,
+				ED9F9CB225F2DC84005359EC /* libcrypto.1.1.dylib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -111,10 +105,8 @@
 		ED8A99BB2021004A0069EBF6 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				ED9FF4F824A7C975005E3025 /* libcrypto.1.1.dylib */,
-				ED9FF4F924A7C975005E3025 /* libssl.1.1.dylib */,
-				ED8A99BC2021004B0069EBF6 /* libcrypto.1.0.0.dylib */,
-				ED8A99BD2021004B0069EBF6 /* libssl.1.0.0.dylib */,
+				ED9F9CB025F2DC84005359EC /* libcrypto.1.1.dylib */,
+				ED9F9CB125F2DC84005359EC /* libssl.1.1.dylib */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -215,6 +207,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				LIBRARY_SEARCH_PATHS = /usr/local/lib;
 				MACOSX_DEPLOYMENT_TARGET = 10.8;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
@@ -251,6 +244,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				LIBRARY_SEARCH_PATHS = /usr/local/lib;
 				MACOSX_DEPLOYMENT_TARGET = 10.8;
 				SDKROOT = macosx;
 			};
@@ -271,7 +265,8 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"/usr/local/Cellar/openssl@1.1/1.1.1d/lib",
+					/usr/local/opt/openssl/lib,
+					"/usr/local/Cellar/openssl@1.1/1.1.1h/lib",
 				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
@@ -292,7 +287,8 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"/usr/local/Cellar/openssl@1.1/1.1.1d/lib",
+					/usr/local/opt/openssl/lib,
+					"/usr/local/Cellar/openssl@1.1/1.1.1h/lib",
 				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
