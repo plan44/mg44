@@ -487,8 +487,10 @@ static void request_csrf_token(struct mg_connection *conn)
   get_csrf_token(conn, tok);
   mg_printf(
     conn, "HTTP/1.0 200 OK\r\n"
+    "%s"
     "Content-Length: %ld\r\n"
     "Content-Type: text/plain\r\n\r\n\"%s\"",
+    nocache_headers, // do NOT cache CSRF token responses
     strlen(tok)+2,
     tok
   );
@@ -712,7 +714,7 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
       // abort
       DEBUG_TRACE(("csrf token does not match"));
       free(message); message = NULL;
-      mg_printf(conn, "HTTP/1.0 403 Forbidden\r\n\r\n<html><body><h1>forbidden</h1></body></html>");
+      mg_printf(conn, "HTTP/1.0 403 Forbidden\r\n%s\r\n<html><body><h1>forbidden</h1></body></html>", nocache_headers);
       return 1; // request handled
     }
     else if (apiCall) {
@@ -786,8 +788,10 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
     }
     mg_printf(
       conn,
+      "%s"
       "Content-Length: %ld\r\n"
       "Content-Type: %.*s\r\n\r\n",
+      nocache_headers, // do NOT cache JSON responses
       message_length, contentType_len, contentType
     );
     DEBUG_TRACE(("response body = %.*s", (int)message_length, msgP));
