@@ -19258,8 +19258,9 @@ master_thread_run(struct mg_context *ctx)
         tls.user_ptr = NULL;
     }
 
-    /* Server starts *now* */
-    ctx->start_time = time(NULL);
+    /* Server starts now, but as it might not have correct real time right now
+       we wait defining the start time until the first connection is accepted */
+    ctx->start_time = 0;
 
     /* Start the server */
     pfd = ctx->listening_socket_fds;
@@ -19277,6 +19278,8 @@ master_thread_run(struct mg_context *ctx)
                  * Therefore, we're checking pfd[i].revents & POLLIN, not
                  * pfd[i].revents == POLLIN. */
                 if ((ctx->stop_flag == 0) && (pfd[i].revents & POLLIN)) {
+                    /* define start time *now* if it is not set yet */
+                    if (ctx->start_time==0) ctx->start_time = time(NULL);
                     accept_new_connection(&ctx->listening_sockets[i], ctx);
                 }
             }
