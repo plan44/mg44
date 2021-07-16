@@ -1639,6 +1639,8 @@ CIVETWEB_API int mg_start_domain2(struct mg_context *ctx,
                                   struct mg_error_data *error);
 #endif
 
+CIVETWEB_API extern const char* nocache_headers;
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

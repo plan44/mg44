@@ -4454,15 +4454,16 @@ suggest_connection_header(const struct mg_connection *conn)
 }
 
 
+const char* nocache_headers = "Cache-Control: no-cache, no-store, "
+  "must-revalidate, private, max-age=0\r\n"
+  "Pragma: no-cache\r\n"
+  "Expires: 0\r\n";
+
 static int
 send_no_cache_header(struct mg_connection *conn)
 {
     /* Send all current and obsolete cache opt-out directives. */
-    return mg_printf(conn,
-                     "Cache-Control: no-cache, no-store, "
-                     "must-revalidate, private, max-age=0\r\n"
-                     "Pragma: no-cache\r\n"
-                     "Expires: 0\r\n");
+    return mg_printf(conn, "%s", nocache_headers);
 }
 
 
