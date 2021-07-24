@@ -1901,6 +1901,8 @@ typedef struct x509 X509;
 #define SSL_TLSEXT_ERR_ALERT_FATAL (2)
 #define SSL_TLSEXT_ERR_NOACK (3)
 
+#define SSL_SESS_CACHE_BOTH (3)
+
 #endif /* !USE_SSL_HEADERS */
 
 struct ssl_func {
@@ -1975,7 +1977,13 @@ struct ssl_func {
     (*(unsigned long (*)(SSL_CTX *, unsigned long))ssl_sw[39].ptr)
 #define SSL_CTX_get0_param                                                     \
     (*(__owur X509_VERIFY_PARAM *(*)(SSL_CTX *ctx))ssl_sw[40].ptr)
+#define SSL_CTX_set_session_cache_mode                                         \
+    (*(long (*)(SSL_CTX *, long))ssl_sw[41].ptr)
+#define SSL_CTX_sess_set_cache_size (*(long (*)(SSL_CTX *, long))ssl_sw[42].ptr)
+#define SSL_CTX_set_timeout (*(long (*)(SSL_CTX *, long))ssl_sw[43].ptr)
 
+#define SSL_CTX_clear_options(ctx, op)                                         \
+    SSL_CTX_ctrl((ctx), SSL_CTRL_CLEAR_OPTIONS, (op), NULL)
 #define SSL_CTX_set_ecdh_auto(ctx, onoff)                                      \
     SSL_CTX_ctrl(ctx, SSL_CTRL_SET_ECDH_AUTO, onoff, NULL)
 
@@ -2072,6 +2080,9 @@ static struct ssl_func ssl_sw[] = {{"SSL_free", NULL},
                                    {"SSL_ctrl", NULL},
                                    {"SSL_CTX_clear_options", NULL },
                                    {"SSL_CTX_get0_param", NULL},
+                                   {"SSL_CTX_set_session_cache_mode", NULL},
+                                   {"SSL_CTX_sess_set_cache_size", NULL},
+                                   {"SSL_CTX_set_timeout", NULL},
                                    {NULL, NULL}};
 
 
@@ -2154,6 +2165,11 @@ static struct ssl_func crypto_sw[] = {{"ERR_get_error", NULL},
     (*(const char *(*)(const SSL *, int type))ssl_sw[36].ptr)
 #define SSL_set_SSL_CTX (*(SSL_CTX * (*)(SSL *, SSL_CTX *)) ssl_sw[37].ptr)
 #define SSL_ctrl (*(long (*)(SSL *, int, long, void *))ssl_sw[38].ptr)
+#define SSL_CTX_set_session_cache_mode                                         \
+    (*(long (*)(SSL_CTX *, long))ssl_sw[39].ptr)
+#define SSL_CTX_sess_set_cache_size (*(long (*)(SSL_CTX *, long))ssl_sw[40].ptr)
+#define SSL_CTX_set_timeout (*(long (*)(SSL_CTX *, long))ssl_sw[41].ptr)
+
 
 #define SSL_CTX_set_options(ctx, op)                                           \
     SSL_CTX_ctrl((ctx), SSL_CTRL_OPTIONS, (op), NULL)
@@ -2285,6 +2301,9 @@ static struct ssl_func ssl_sw[] = {{"SSL_free", NULL},
                                    {"SSL_get_servername", NULL},
                                    {"SSL_set_SSL_CTX", NULL},
                                    {"SSL_ctrl", NULL},
+                                   {"SSL_CTX_set_session_cache_mode", NULL},
+                                   {"SSL_CTX_sess_set_cache_size", NULL},
+                                   {"SSL_CTX_set_timeout", NULL},
                                    /* for host name verification in OpenSSL 1.0.x only */
                                    {"SSL_get_ex_data_X509_STORE_CTX_idx", NULL},
                                    {NULL, NULL}};
@@ -2502,6 +2521,7 @@ enum {
     URL_REWRITE_PATTERN,
     HIDE_FILES,
     SSL_DO_VERIFY_PEER,
+    SSL_CACHE_TIMEOUT,
     SSL_CA_PATH,
     SSL_CA_FILE,
     SSL_VERIFY_DEPTH,
@@ -2619,6 +2639,7 @@ static const struct mg_option config_options[] = {
     {"hide_files_patterns", MG_CONFIG_TYPE_EXT_PATTERN, NULL},
 
     {"ssl_verify_peer", MG_CONFIG_TYPE_YES_NO_OPTIONAL, "no"},
+    {"ssl_cache_timeout", MG_CONFIG_TYPE_NUMBER, "-1"},
 
     {"ssl_ca_path", MG_CONFIG_TYPE_DIRECTORY, NULL},
     {"ssl_ca_file", MG_CONFIG_TYPE_FILE, NULL},
@@ -16323,6 +16344,7 @@ init_ssl_ctx_impl(struct mg_context *phys_ctx,
     md5_byte_t ssl_context_id[16];
     md5_state_t md5state;
     int protocol_ver;
+    int ssl_cache_timeout;
 
 #if defined(OPENSSL_API_1_1)
     if ((dom_ctx->ssl_ctx = SSL_CTX_new(TLS_server_method())) == NULL) {
@@ -16516,6 +16538,16 @@ init_ssl_ctx_impl(struct mg_context *phys_ctx,
         }
     }
 
+    /* SSL session caching */
+    ssl_cache_timeout = ((dom_ctx->config[SSL_CACHE_TIMEOUT] != NULL)
+                             ? atoi(dom_ctx->config[SSL_CACHE_TIMEOUT])
+                             : 0);
+    if (ssl_cache_timeout > 0) {
+        SSL_CTX_set_session_cache_mode(dom_ctx->ssl_ctx, SSL_SESS_CACHE_BOTH);
+        /* SSL_CTX_sess_set_cache_size(dom_ctx->ssl_ctx, 10000);  ... use default */
+        SSL_CTX_set_timeout(dom_ctx->ssl_ctx, (long)ssl_cache_timeout);
+    }
+
     return 1;
 }
 
@@ -16553,11 +16585,14 @@ init_ssl_ctx(struct mg_context *phys_ctx, struct mg_domain_context *dom_ctx)
                                                     phys_ctx->user_data));
 
     if (callback_ret < 0) {
+        /* Callback exists and returns <0: Initializing failed. */
         mg_cry_ctx_internal(phys_ctx,
                             "external_ssl_ctx callback returned error: %i",
                             callback_ret);
         return 0;
     } else if (callback_ret > 0) {
+        /* Callback exists and returns >0: Initializing complete,
+         * civetweb should not modify the SSL context. */
         dom_ctx->ssl_ctx = (SSL_CTX *)ssl_ctx;
         if (!initialize_ssl(ebuf, sizeof(ebuf))) {
             mg_cry_ctx_internal(phys_ctx, "%s", ebuf);
@@ -16565,8 +16600,10 @@ init_ssl_ctx(struct mg_context *phys_ctx, struct mg_domain_context *dom_ctx)
         }
         return 1;
     }
+    /* If the callback does not exist or return 0, civetweb must initialize
+     * the SSL context. Handle "domain" callback next. */
 
-    /* Check for external domain SSL_CTX */
+    /* Check for external domain SSL_CTX callback. */
     callback_ret = (phys_ctx->callbacks.external_ssl_ctx_domain == NULL)
                        ? 0
                        : (phys_ctx->callbacks.external_ssl_ctx_domain(
@@ -16575,12 +16612,14 @@ init_ssl_ctx(struct mg_context *phys_ctx, struct mg_domain_context *dom_ctx)
                              phys_ctx->user_data));
 
     if (callback_ret < 0) {
+        /* Callback < 0: Error. Abort init. */
         mg_cry_ctx_internal(
             phys_ctx,
             "external_ssl_ctx_domain callback returned error: %i",
             callback_ret);
         return 0;
     } else if (callback_ret > 0) {
+        /* Callback > 0: Consider init done. */
         dom_ctx->ssl_ctx = (SSL_CTX *)ssl_ctx;
         if (!initialize_ssl(ebuf, sizeof(ebuf))) {
             mg_cry_ctx_internal(phys_ctx, "%s", ebuf);
@@ -16605,11 +16644,14 @@ init_ssl_ctx(struct mg_context *phys_ctx, struct mg_domain_context *dom_ctx)
         return 0;
     }
 
+    /* If a certificate chain is configured, use it. */
     chain = dom_ctx->config[SSL_CERTIFICATE_CHAIN];
     if (chain == NULL) {
+        /* Default: certificate chain in PEM file */
         chain = pem;
     }
     if ((chain != NULL) && (*chain == 0)) {
+        /* If the chain is an empty string, don't use it. */
         chain = NULL;
     }
 
@@ -18559,6 +18601,7 @@ init_connection(struct mg_connection *conn)
      * goes to crule42. */
     conn->data_len = 0;
     conn->handled_requests = 0;
+    conn->connection_type = CONNECTION_TYPE_INVALID;
     conn->client_timeout = -1; // none, use default for context
     mg_set_user_connection_data(conn, NULL);
 
