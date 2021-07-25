@@ -488,9 +488,11 @@ static void request_csrf_token(struct mg_connection *conn)
   mg_printf(
     conn, "HTTP/1.0 200 OK\r\n"
     "%s"
+    "Connection: %s\r\n"
     "Content-Length: %ld\r\n"
     "Content-Type: text/plain\r\n\r\n\"%s\"",
     nocache_headers, // do NOT cache CSRF token responses
+    suggest_connection_header(conn), // keep-alive or not
     strlen(tok)+2,
     tok
   );
@@ -788,10 +790,12 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
     }
     mg_printf(
       conn,
-      "%s"
+      "%s" // no cache headers
+      "Connection: %s\r\n"
       "Content-Length: %ld\r\n"
       "Content-Type: %.*s\r\n\r\n",
       nocache_headers, // do NOT cache JSON responses
+      suggest_connection_header(conn), // keep-alive or not
       message_length, contentType_len, contentType
     );
     DEBUG_TRACE(("response body = %.*s", (int)message_length, msgP));
