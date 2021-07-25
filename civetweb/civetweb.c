@@ -2528,6 +2528,7 @@ enum {
     SSL_DEFAULT_VERIFY_PATHS,
     SSL_CIPHER_LIST,
     SSL_PROTOCOL_VERSION,
+    SSL_MAX_PROTOCOL_VERSION,
     SSL_SHORT_TRUST,
 
 #if defined(USE_LUA)
@@ -2647,6 +2648,7 @@ static const struct mg_option config_options[] = {
     {"ssl_default_verify_paths", MG_CONFIG_TYPE_BOOLEAN, "yes"},
     {"ssl_cipher_list", MG_CONFIG_TYPE_STRING, NULL},
     {"ssl_protocol_version", MG_CONFIG_TYPE_NUMBER, "0"},
+    {"ssl_max_protocol_version", MG_CONFIG_TYPE_NUMBER, "0"},
     {"ssl_short_trust", MG_CONFIG_TYPE_BOOLEAN, "no"},
 
 #if defined(USE_LUA)
@@ -16192,21 +16194,22 @@ ssl_use_pem_file(struct mg_context *phys_ctx,
 
 #if defined(OPENSSL_API_1_1)
 static unsigned long
-ssl_get_protocol(int version_id)
+ssl_get_protocol(int version_id, int max_version_id)
 {
+    if (max_version_id==0) max_version_id=9999; /* no upper limit, simplify comparisons below */
     long unsigned ret = (long unsigned)SSL_OP_ALL;
     if (version_id > 0)
         ret |= SSL_OP_NO_SSLv2;
-    if (version_id > 1)
+    if (version_id > 1 || max_version_id < 1)
         ret |= SSL_OP_NO_SSLv3;
-    if (version_id > 2)
+    if (version_id > 2 || max_version_id < 2)
         ret |= SSL_OP_NO_TLSv1;
-    if (version_id > 3)
+    if (version_id > 3 || max_version_id < 3)
         ret |= SSL_OP_NO_TLSv1_1;
-    if (version_id > 4)
+    if (version_id > 4 || max_version_id < 4)
         ret |= SSL_OP_NO_TLSv1_2;
 #if defined(SSL_OP_NO_TLSv1_3)
-    if (version_id > 5)
+    if (version_id > 5 || max_version_id < 5)
         ret |= SSL_OP_NO_TLSv1_3;
 #endif
     return ret;
@@ -16344,6 +16347,7 @@ init_ssl_ctx_impl(struct mg_context *phys_ctx,
     md5_byte_t ssl_context_id[16];
     md5_state_t md5state;
     int protocol_ver;
+    int max_protocol_ver;
     int ssl_cache_timeout;
 
 #if defined(OPENSSL_API_1_1)
@@ -16366,7 +16370,8 @@ init_ssl_ctx_impl(struct mg_context *phys_ctx,
                           SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1
                               | SSL_OP_NO_TLSv1_1);
     protocol_ver = atoi(dom_ctx->config[SSL_PROTOCOL_VERSION]);
-    SSL_CTX_set_options(dom_ctx->ssl_ctx, ssl_get_protocol(protocol_ver));
+    max_protocol_ver = atoi(dom_ctx->config[SSL_MAX_PROTOCOL_VERSION]);
+    SSL_CTX_set_options(dom_ctx->ssl_ctx, ssl_get_protocol(protocol_ver, max_protocol_ver));
     SSL_CTX_set_options(dom_ctx->ssl_ctx, SSL_OP_SINGLE_DH_USE);
     SSL_CTX_set_options(dom_ctx->ssl_ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
     SSL_CTX_set_options(dom_ctx->ssl_ctx,
