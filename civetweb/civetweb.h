@@ -1640,6 +1640,7 @@ CIVETWEB_API int mg_start_domain2(struct mg_context *ctx,
 #endif
 
 CIVETWEB_API extern const char* nocache_headers;
+CIVETWEB_API const char* suggest_connection_header(const struct mg_connection *conn);
 
 #ifdef __cplusplus
 }

@@ -4470,7 +4470,7 @@ should_decode_url(const struct mg_connection *conn)
 }
 
 
-static const char *
+const char *
 suggest_connection_header(const struct mg_connection *conn)
 {
     return should_keep_alive(conn) ? "keep-alive" : "close";
