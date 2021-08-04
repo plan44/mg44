@@ -570,9 +570,10 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
     // { "method" : "POST", "uri" : "/myuri", ["uri_params":{}] "data" : <{ JSON payload }>}
     message_length = snprintf(
       message, msgBufSz,
-      "{ \"method\":\"%s\", \"uri\":\"%s\"",
+      "{ \"method\":\"%s\", \"uri\":\"%s\", \"peer\":\"%s\"",
       mg_get_request_info(conn)->request_method,
-      mg_get_request_info(conn)->local_uri+prefix_length // rest of URI
+      mg_get_request_info(conn)->local_uri+prefix_length, // rest of URI
+      mg_get_request_info(conn)->remote_addr // peer's IP address
     );
     csrfValPending = *jsonCSRFPath!=0; // pending if jsonCSRFPath is set
     // check query variables
