@@ -8867,6 +8867,7 @@ mg_check_digest_access_authentication(struct mg_connection *conn,
 #endif /* NO_FILESYSTEMS */
 
 
+
 /* Return 1 if request is authorised, 0 otherwise. */
 static int
 check_authorization(struct mg_connection *conn, const char *path)
@@ -8962,8 +8963,23 @@ send_authorization_request(struct mg_connection *conn, const char *realm)
 }
 
 
-/* Interface function. Parameters are provided by the user, so do
- * at least some basic checks.
+
+/* Interface function version of check_authorization().
+ * Parameters are provided by the user, so do at least some basic checks.
+ */
+int
+mg_check_path_authorization(struct mg_connection *conn, const char *path)
+{
+    if (conn && conn->dom_ctx) {
+        return check_authorization(conn, path);
+    }
+    return -1;
+}
+
+
+
+/* Interface function version of send_authorization_request().
+ * Parameters are provided by the user, so do at least some basic checks.
  */
 int
 mg_send_digest_access_authentication_request(struct mg_connection *conn,
