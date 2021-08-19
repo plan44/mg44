@@ -97,6 +97,7 @@ static char lastUploadedFilePath[MAX_UPLOAD_PATH_LENGTH]; // path to last file u
 #else
 #define MAX_API_OPT_CHARS 40
 #endif
+#define MAX_EXTRAAUTH_OPT_CHARS 255
 // JSON CSRF protection
 static char jsonCSRFPath[MAX_API_OPT_CHARS]; // path prefix for JSON CSRF token generator
 // JSON REST API passtrough
@@ -109,7 +110,8 @@ static char jsonCmdlinePath[MAX_API_OPT_CHARS]; // path prefix for JSON command 
 static char jsonCmdlineTool[MAX_API_OPT_CHARS]; // full path for command line tool which handles JSON requests
 static char jsonUploadPath[MAX_API_OPT_CHARS]; // path prefix for JSON command with preceeding file upload
 static char uploadDir[MAX_API_OPT_CHARS]; // directory where to save uploaded files
-
+// extra auth
+static char extraAuth[MAX_EXTRAAUTH_OPT_CHARS]; // path:path*:path=authfile[,path=authfile] extra auth specifications. path* means all path starting as specified
 
 #if !defined(CONFIG_FILE)
 #define CONFIG_FILE "mongoose.conf"
@@ -213,6 +215,9 @@ static void set_option(char **options, const char *name, const char *value) {
   }
   else if (strcmp(name, "jsoncmd_tool")==0) {
     strncpy(jsonCmdlineTool, value, MAX_API_OPT_CHARS);
+  }
+  else if (strcmp(name, "extra_auth")==0) {
+    strncpy(extraAuth, value, MAX_EXTRAAUTH_OPT_CHARS);
   }
   else {
     // standard mongoose option
@@ -508,11 +513,99 @@ static void upload_occurred(struct mg_connection *conn, const char *file_name)
 
 
 #if USE_LIBMONGOOSE
+
 static int begin_request(struct mg_connection *conn)
 {
   request_handler(conn, NULL);
 }
+
+#else
+
+static int authorization_handler(struct mg_connection *conn, void *cbdata)
+{
+  const char* path = mg_get_request_info(conn)->local_uri;
+  // check extra auth first
+  // path:path*:path[=[domain@]authfile][,path[=[domain@]authfile]]
+  // - : separated paths will all be checked
+  // - paths can have * suffix to also match paths beginning with specified string
+  // - specifying no auth file allows accessing the path(s) w/o any auth
+  // - specifying no domain/realm uses the global auth domain/realm
+  const char* p = extraAuth;
+  const char* af = NULL;
+  const char* de = NULL;
+  const char* pe = NULL;
+  const char* se = NULL;
+  char afn[MAX_API_OPT_CHARS];
+  char dmn[MAX_API_OPT_CHARS];
+  int authres;
+  int wildcard;
+  while (*p) {
+    wildcard = 0;
+    // limit spec
+    se = strchr(p, ',');
+    if (!se) se = p+strlen(p);
+    // limit path
+    pe = strchr(p, ':');
+    if (!pe || pe>se) pe = strchr(p, '=');
+    if (!pe || pe>se) pe = se;
+    if (pe>p && *(pe-1)=='*') {
+      wildcard = 1;
+    }
+    if (strncmp(path, p, wildcard ? pe-p-1 : strlen(path))==0) {
+      // match, search path
+      af = strchr(pe, '=');
+      if (af && af<se) {
+        // optional domain and auth file path follows
+        af++;
+        de = strchr(af, '@');
+        if (de && de<se) {
+          // domain specified
+          strncpy(dmn, af, de-af<MAX_API_OPT_CHARS ? de-af : MAX_API_OPT_CHARS);
+          af = de+1; // skip @
+          de = dmn; // domain name
+        }
+        else {
+          de = NULL; // default domain
+        }
+        strncpy(afn, af, se-af<MAX_API_OPT_CHARS ? se-af : MAX_API_OPT_CHARS);
+        // check via given authfile path (and nothing else)
+        authres = mg_check_digest_access_authentication(conn, de, afn);
+        if (authres>0) return 1; // authorized
+        else if (authres==0) {
+          // not authorized, but authorizable (auth file exists, params ok) -> request authorization
+          mg_send_digest_access_authentication_request(conn, de);
+        }
+        return 0; // not authorized, end request here
+      }
+      else {
+        // no '=authfile' means NO authentication required here
+        return 1; // authorized
+      }
+      break;
+    }
+    // no path match
+    if (*pe==':') {
+      // more paths in this spec to possibly match
+      p = pe+1;
+    }
+    else if (*se==',') {
+      // more specs
+      p = se+1;
+    }
+    else {
+      break;
+    }
+  }
+  // fall back to standard civetweb check (.htpasswd, global passwd file)
+  if (!mg_check_path_authorization(conn, path)) {
+    mg_send_digest_access_authentication_request(conn, NULL);
+    return 0; // not authorized, end request here
+  }
+  return 1; // authorized
+}
+
 #endif
+
 
 
 static int request_handler(struct mg_connection *conn, void *cbdata)
@@ -920,8 +1013,9 @@ static void start_mongoose(int argc, char *argv[]) {
     die("%s", "Failed to start Mongoose.");
   }
   #if !USE_LIBMONGOOSE
-  // register handler
+  // register handlers
   mg_set_request_handler(ctx, "/", request_handler, NULL);
+  mg_set_auth_handler(ctx, "/", authorization_handler, NULL);
   #endif
 }
 
