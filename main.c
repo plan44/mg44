@@ -97,9 +97,10 @@ static char lastUploadedFilePath[MAX_UPLOAD_PATH_LENGTH]; // path to last file u
 #else
 #define MAX_API_OPT_CHARS 40
 #endif
-#define MAX_EXTRAAUTH_OPT_CHARS 255
+#define MAX_LONG_OPT_CHARS 255
 // JSON CSRF protection
 static char jsonCSRFPath[MAX_API_OPT_CHARS]; // path prefix for JSON CSRF token generator
+static char noCSRFPaths[MAX_LONG_OPT_CHARS]; // (colon separated) paths that do not need CSRF checking
 // JSON REST API passtrough
 static char jsonApiPath[MAX_API_OPT_CHARS]; // path prefix for JSON API passthrough
 static char jsonApiHost[MAX_API_OPT_CHARS]; // host name/IP for JSON API passthrough
@@ -111,7 +112,7 @@ static char jsonCmdlineTool[MAX_API_OPT_CHARS]; // full path for command line to
 static char jsonUploadPath[MAX_API_OPT_CHARS]; // path prefix for JSON command with preceeding file upload
 static char uploadDir[MAX_API_OPT_CHARS]; // directory where to save uploaded files
 // extra auth
-static char extraAuth[MAX_EXTRAAUTH_OPT_CHARS]; // path:path*:path=authfile[,path=authfile] extra auth specifications. path* means all path starting as specified
+static char extraAuth[MAX_LONG_OPT_CHARS]; // path:path*:path=authfile[,path=authfile] extra auth specifications. path* means all path starting as specified
 
 #if !defined(CONFIG_FILE)
 #define CONFIG_FILE "mongoose.conf"
@@ -192,6 +193,9 @@ static void set_option(char **options, const char *name, const char *value) {
   if (strcmp(name, "jsoncsrf_path")==0) {
     strncpy(jsonCSRFPath, value, MAX_API_OPT_CHARS);
   }
+  else if (strcmp(name, "nocsrf_paths")==0) {
+    strncpy(noCSRFPaths, value, MAX_LONG_OPT_CHARS);
+  }
   else if (strcmp(name, "jsonapi_path")==0) {
     strncpy(jsonApiPath, value, MAX_API_OPT_CHARS);
   }
@@ -217,7 +221,7 @@ static void set_option(char **options, const char *name, const char *value) {
     strncpy(jsonCmdlineTool, value, MAX_API_OPT_CHARS);
   }
   else if (strcmp(name, "extra_auth")==0) {
-    strncpy(extraAuth, value, MAX_EXTRAAUTH_OPT_CHARS);
+    strncpy(extraAuth, value, MAX_LONG_OPT_CHARS);
   }
   else {
     // standard mongoose option
@@ -668,7 +672,23 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
       mg_get_request_info(conn)->local_uri+prefix_length, // rest of URI
       mg_get_request_info(conn)->remote_addr // peer's IP address
     );
-    csrfValPending = *jsonCSRFPath!=0; // pending if jsonCSRFPath is set
+    if (*jsonCSRFPath!=0) {
+      // CSRF checking is on
+      csrfValPending = 1;
+      // check for paths excluded from CSRF checking
+      // path[:path ...]
+      const char* p = noCSRFPaths;
+      while (*p) {
+        const char* pe = strchr(p, ':');
+        if (strncmp(p, mg_get_request_info(conn)->local_uri, pe ? pe-p : strlen(p))==0) {
+          // matches one of the paths that must not have CSRF checking
+          csrfValPending = 0;
+          break;
+        }
+        if (!pe) break;
+        p = pe+1;
+      }
+    }
     // check query variables
     q = mg_get_request_info(conn)->query_string;
     if (q && *q) {
@@ -912,10 +932,18 @@ static void start_mongoose(int argc, char *argv[]) {
   char *options[MAX_OPTIONS];
   int i;
 
-  // p44 API passthrough option init
-  jsonApiHost[0] = 0;
+  // init p44 options
+  jsonCSRFPath[0] = 0;
+  noCSRFPaths[0] = 0;
   jsonApiPath[0] = 0;
+  jsonApiHost[0] = 0;
   jsonApiService[0] = 0;
+  jsonApiUploadPath[0] = 0;
+  jsonCmdlinePath[0] = 0;
+  jsonCmdlineTool[0] = 0;
+  jsonUploadPath[0] = 0;
+  uploadDir[0] = 0;
+  extraAuth[0] = 0;
 
   // Edit passwords file if -A option is specified
   if (argc > 1 && !strcmp(argv[1], "-A")) {
