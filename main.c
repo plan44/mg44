@@ -135,17 +135,31 @@ static void die(const char *fmt, ...) {
   exit(EXIT_FAILURE);
 }
 
+
+static void show_version(void) {
+  fprintf(stderr, "mg44 v%s based on civetweb %s, built on %s\n",
+    #if defined(PACKAGE_VERSION)
+    PACKAGE_VERSION, // automake package version number
+    #else
+    "????", // none known
+    #endif
+    mg_version(),
+    __DATE__
+  );
+}
+
+
 static void show_usage_and_exit(void) {
   const char **names;
   int i;
 
-  fprintf(stderr, "Mongoose version %s (c) Sergey Lyubka, built on %s, with luz additions\n",
-          mg_version(), __DATE__);
+  show_version();
   fprintf(stderr, "Usage:\n");
-  fprintf(stderr, "  mongoose -A <htpasswd_file> <realm> <user> <passwd>\n");
-  fprintf(stderr, "  mongoose -D <method> <host> <doc> [<contenttype> <body>] (https test)\n");
-  fprintf(stderr, "  mongoose [config_file]\n");
-  fprintf(stderr, "  mongoose [-option value ...]\n");
+  fprintf(stderr, "  mongoose -A <htpasswd_file> <realm> <user> <passwd> # edit password file\n");
+  fprintf(stderr, "  mongoose -D <method> <host> <doc> [<contenttype> <body>] # https test\n");
+  fprintf(stderr, "  mongoose -V # show version\n");
+  fprintf(stderr, "  mongoose [config_file] # start server\n");
+  fprintf(stderr, "  mongoose [-option value ...] # start server\n");
   fprintf(stderr, "\nOPTIONS:\n");
 
   names = mg_get_valid_option_names();
@@ -307,8 +321,15 @@ static void process_command_line_arguments(char *argv[], char **options) {
 }
 
 static void init_server_name(void) {
-  snprintf(server_name, sizeof(server_name), "Mongoose web server v. %s",
-           mg_version());
+  snprintf(
+    server_name, sizeof(server_name), "mg44 v%s based on civetweb v%s",
+    #if defined(PACKAGE_VERSION)
+    PACKAGE_VERSION, // automake package version number
+    #else
+    "????", // none known
+    #endif
+    mg_version()
+  );
 }
 
 static int log_message(const struct mg_connection *conn, const char *message) {
@@ -573,7 +594,7 @@ static int authorization_handler(struct mg_connection *conn, void *cbdata)
         }
         strncpy(afn, af, se-af<MAX_API_OPT_CHARS ? se-af : MAX_API_OPT_CHARS);
         // check via given authfile path (and nothing else)
-        authres = mg_check_digest_access_authentication(conn, de, afn);
+        authres = mg_check_access_authentication(conn, de, afn);
         if (authres>0) return 1; // authorized
         else if (authres==0) {
           // not authorized, but authorizable (auth file exists, params ok) -> request authorization
@@ -981,7 +1002,7 @@ static void start_mongoose(int argc, char *argv[]) {
       argc>6 ? argv[6] : "" // body
     );
     if (!mgConn) {
-      printf("Mongoose error: %s\n", ebuf);
+      printf("Civetweb error: %s\n", ebuf);
     }
     else {
       printf("Connection OK\n");
@@ -1012,6 +1033,11 @@ static void start_mongoose(int argc, char *argv[]) {
   if (argc == 2 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help"))) {
     show_usage_and_exit();
   }
+  // Show version if -V option is specified
+  if (argc == 2 && !strcmp(argv[1], "-V")) {
+    show_version();
+    exit(EXIT_SUCCESS);
+  }
 
   /* Update config based on command line arguments */
   process_command_line_arguments(argv, options);
@@ -1020,7 +1046,7 @@ static void start_mongoose(int argc, char *argv[]) {
   signal(SIGTERM, signal_handler);
   signal(SIGINT, signal_handler);
 
-  /* Start Mongoose */
+  /* Start Civetweb */
   memset(&callbacks, 0, sizeof(callbacks));
   // Install log callback
   callbacks.log_message = &log_message;
@@ -1038,7 +1064,7 @@ static void start_mongoose(int argc, char *argv[]) {
     free(options[i]);
   }
   if (ctx == NULL) {
-    die("%s", "Failed to start Mongoose.");
+    die("%s", "Failed to start Civetweb.");
   }
   #if !USE_LIBMONGOOSE
   // register handlers
