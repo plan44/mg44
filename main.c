@@ -1,4 +1,8 @@
-// Copyright (c) 2004-2013 Sergey Lyubka
+// Copyright (c) 2013-2022 plan44.ch / Lukas Zeller, Zurich, Switzerland
+//
+// Based on mongoose sample code Copyright (c) 2004-2013 Sergey Lyubka
+// Using mongoose branch civetweb Copyright (c) 2013-2020 the Civetweb developers
+//   with additions (c) 2013-2022 plan44.ch / Lukas Zeller
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -17,6 +21,10 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
+
+#ifdef HAVE_CONFIG_H
+  #include "config.h"
+#endif
 
 #define _XOPEN_SOURCE 600  // For PATH_MAX on linux
 
@@ -47,7 +55,6 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
-
 
 #include <time.h>
 #include <pthread.h>
@@ -137,14 +144,13 @@ static void die(const char *fmt, ...) {
 
 
 static void show_version(void) {
-  fprintf(stderr, "mg44 v%s based on civetweb %s, built on %s\n",
+  fprintf(stderr, "mg44 v%s based on civetweb %s\n",
     #if defined(PACKAGE_VERSION)
     PACKAGE_VERSION, // automake package version number
     #else
     "????", // none known
     #endif
-    mg_version(),
-    __DATE__
+    mg_version()
   );
 }
 
@@ -155,11 +161,11 @@ static void show_usage_and_exit(void) {
 
   show_version();
   fprintf(stderr, "Usage:\n");
-  fprintf(stderr, "  mongoose -A <htpasswd_file> <realm> <user> <passwd> # edit password file\n");
-  fprintf(stderr, "  mongoose -D <method> <host> <doc> [<contenttype> <body>] # https test\n");
-  fprintf(stderr, "  mongoose -V # show version\n");
-  fprintf(stderr, "  mongoose [config_file] # start server\n");
-  fprintf(stderr, "  mongoose [-option value ...] # start server\n");
+  fprintf(stderr, "  mg44 -A <htpasswd_file> <realm> <user> <passwd> # edit password file\n");
+  fprintf(stderr, "  mg44 -D <method> <host> <doc> [<contenttype> <body>] # https test\n");
+  fprintf(stderr, "  mg44 -V # show version\n");
+  fprintf(stderr, "  mg44 [config_file] # start server\n");
+  fprintf(stderr, "  mg44 [-option value ...] # start server\n");
   fprintf(stderr, "\nOPTIONS:\n");
 
   names = mg_get_valid_option_names();
