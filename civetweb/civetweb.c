@@ -18316,18 +18316,18 @@ int create_authorization_header(struct wah *wah,
          * header = Authorization: Basic <auth>
          *          012345678901234567890 = 21 chars
          */
-        n = strlen(username) + strlen(password) + 2;
+        n = strlen(username) + strlen(password) + 2; // username+password+:+terminator
         if (buf_size < n*3/2+2+21+2+1) { // B64 makes 3 bytes out of 2, max 2 padding, prefix is 21, CRLF is 2, 1 terminator
             return 0; // buffer too small, cannot auth
         }
-        sprintf(buf, "Authorization: Basic ");
-        n = strlen(buf);
         bauthbuf = mg_malloc(n);
+        sprintf(buf, "Authorization: Basic ");
         sprintf(bauthbuf, "%s:%s", username, password);
+        n = strlen(buf);
         base64_encode((unsigned char*)bauthbuf, (int)strlen(bauthbuf), buf+n);
         mg_free(bauthbuf);
         n = strlen(buf);
-
+        mg_snprintf(NULL, NULL, buf+n, buf_size-n, "\r\n");
     }
     else {
         /* digest auth requested */
@@ -18406,8 +18406,9 @@ mg_download_secure(const struct mg_client_options *client_options,
         create_authorization_header(wah, requesturi, method, username, password, authorization, MG_BUF_LEN);
         reused_auth = 1;
     }
-    else if (allowbasicauth>2) {
-        /* allowbasicauth>2 means: always try basic first - INSECURE on non-SSL connections, but required by some IoT stuff */
+    else if (allowbasicauth>=2) {
+        /* allowbasicauth==2 means: always try basic first - INSECURE on non-SSL connections, but required by some IoT stuff */
+        if (!authorization) authorization = mg_malloc(MG_BUF_LEN);
         create_authorization_header(NULL, requesturi, method, username, password, authorization, MG_BUF_LEN);
     }
     while (1) {
