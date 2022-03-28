@@ -562,6 +562,7 @@ static int authorization_handler(struct mg_connection *conn, void *cbdata)
   // - specifying no auth file allows accessing the path(s) w/o any auth
   // - specifying no domain/realm uses the global auth domain/realm
   const char* p = extraAuth;
+  DEBUG_TRACE(("path='%s', extraAuth='%s'", path, extraAuth));
   const char* af = NULL;
   const char* de = NULL;
   const char* pe = NULL;
@@ -575,6 +576,7 @@ static int authorization_handler(struct mg_connection *conn, void *cbdata)
     // limit spec
     se = strchr(p, ',');
     if (!se) se = p+strlen(p);
+    DEBUG_TRACE(("extra_auth spec[%d]='%.*s'", se-p, se-p, p));
     // limit path
     pe = strchr(p, ':');
     if (!pe || pe>se) pe = strchr(p, '=');
@@ -583,6 +585,7 @@ static int authorization_handler(struct mg_connection *conn, void *cbdata)
       wildcard = 1;
     }
     if (strncmp(path, p, wildcard ? pe-p-1 : strlen(path))==0) {
+      DEBUG_TRACE(("- spec path matches"));
       // match, search path
       af = strchr(pe, '=');
       if (af && af<se) {
@@ -601,15 +604,21 @@ static int authorization_handler(struct mg_connection *conn, void *cbdata)
         strncpy(afn, af, se-af<MAX_API_OPT_CHARS ? se-af : MAX_API_OPT_CHARS);
         // check via given authfile path (and nothing else)
         authres = mg_check_access_authentication(conn, de, afn);
-        if (authres>0) return 1; // authorized
+        if (authres>0) {
+          DEBUG_TRACE(("- AUTHORIZED via auth file"));
+          return 1; // authorized
+        }
         else if (authres==0) {
           // not authorized, but authorizable (auth file exists, params ok) -> request authorization
+          DEBUG_TRACE(("- authorizable, send auth request"));
           mg_send_digest_access_authentication_request(conn, de);
         }
+        DEBUG_TRACE(("- not (yet?) authorized"));
         return 0; // not authorized, end request here
       }
       else {
         // no '=authfile' means NO authentication required here
+        DEBUG_TRACE(("- accessible w/o auth"));
         return 1; // authorized
       }
       break;
@@ -628,10 +637,13 @@ static int authorization_handler(struct mg_connection *conn, void *cbdata)
     }
   }
   // fall back to standard civetweb check (.htpasswd, global passwd file)
+  DEBUG_TRACE(("not in any extra_auth scope, checking global auth"));
   if (!mg_check_path_authorization(conn, path)) {
     mg_send_digest_access_authentication_request(conn, NULL);
+    DEBUG_TRACE(("- not (yet?) authorized"));
     return 0; // not authorized, end request here
   }
+  DEBUG_TRACE(("- authorized via global auth"));
   return 1; // authorized
 }
 
