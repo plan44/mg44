@@ -286,12 +286,11 @@
 				);
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
-					/usr/local/opt/openssl/include,
+					"/usr/local/opt/openssl@1.1/include",
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					/usr/local/opt/openssl/lib,
-					"/usr/local/Cellar/openssl@1.1/1.1.1h/lib",
+					"/usr/local/opt/openssl@1.1/lib",
 				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
@@ -310,12 +309,11 @@
 				);
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
-					/usr/local/opt/openssl/include,
+					"/usr/local/opt/openssl@1.1/include",
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					/usr/local/opt/openssl/lib,
-					"/usr/local/Cellar/openssl@1.1/1.1.1h/lib",
+					"/usr/local/opt/openssl@1.1/lib",
 				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
