@@ -38,6 +38,7 @@
 #include <stddef.h>
 #include <stdarg.h>
 #include <ctype.h>
+#include <unistd.h>
 
 #include "civetweb.h"
 
@@ -356,7 +357,7 @@ int connectSocket(const char *aHost, const char *aServiceOrPort)
   struct addrinfo *ai = NULL;
   memset(&hint, 0, sizeof(hint));
   hint.ai_flags = 0; // no flags
-  hint.ai_family = AF_INET;
+  hint.ai_family = AF_UNSPEC; // allow all families, aHost decides
   hint.ai_socktype = SOCK_STREAM;
   hint.ai_protocol = 0;
   res = getaddrinfo(aHost, aServiceOrPort, &hint, &addressInfoList);
@@ -372,6 +373,12 @@ int connectSocket(const char *aHost, const char *aServiceOrPort)
         if (res==0) {
           // connection open
           break;
+        }
+        else {
+          // error
+          DEBUG_TRACE(("Socket connect() failed despite valid address: %s", strerror(errno)));
+          close(socketFD);
+          socketFD = -1;
         }
       }
       // advance to next address
@@ -393,7 +400,7 @@ static size_t json_api_call(char **messageBufP, size_t maxAnswerBytes)
   char *p;
   DEBUG_TRACE(("- entered json_api_call"));
   int fd = connectSocket(jsonApiHost, jsonApiService);
-  DEBUG_TRACE(("- got connection"));
+  DEBUG_TRACE(("- connectSocket returns fd=%d", fd));
   if (fd>=0) {
     // write
     write(fd, *messageBufP, strlen(*messageBufP));
@@ -407,7 +414,7 @@ static size_t json_api_call(char **messageBufP, size_t maxAnswerBytes)
       }
       p = *messageBufP+answerSize;
       res = read(fd, p, maxAnswerBytes-answerSize);
-      DEBUG_TRACE(("- read: res=%ld, maxAnswerBytes=%ld, answerSize=%ld", res, maxAnswerBytes, answerSize));
+      DEBUG_TRACE(("- read: res=%zu, maxAnswerBytes=%zu, answerSize=%zu", res, maxAnswerBytes, answerSize));
       if (answerSize==0 && res>0 && (uint8_t)p[0]>=0x80)
         isJson=0; // first byte not ASCII -> can't be JSON
       if (res>0) {
@@ -525,7 +532,7 @@ static void request_csrf_token(struct mg_connection *conn)
     conn, "HTTP/1.0 200 OK\r\n"
     "%s"
     "Connection: %s\r\n"
-    "Content-Length: %ld\r\n"
+    "Content-Length: %zu\r\n"
     "Content-Type: text/plain\r\n\r\n\"%s\"",
     nocache_headers, // do NOT cache CSRF token responses
     suggest_connection_header(conn), // keep-alive or not
@@ -576,7 +583,7 @@ static int authorization_handler(struct mg_connection *conn, void *cbdata)
     // limit spec
     se = strchr(p, ',');
     if (!se) se = p+strlen(p);
-    DEBUG_TRACE(("extra_auth spec[%d]='%.*s'", se-p, se-p, p));
+    DEBUG_TRACE(("extra_auth spec[%zd]='%.*s'", se-p, (int)(se-p), p));
     // limit path
     pe = strchr(p, ':');
     if (!pe || pe>se) pe = strchr(p, '=');
@@ -876,13 +883,13 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
       // send json request, receive answer
       DEBUG_TRACE(("calling json_api_call()"));
       message_length = json_api_call(&message, msgBufSz);
-      DEBUG_TRACE(("called json_api_call() = %ld", message_length));
+      DEBUG_TRACE(("called json_api_call() = %zu", message_length));
       message[message_length]=0; // terminate
     }
     else if (cmdlineCall) {
       DEBUG_TRACE(("calling json_cmdline_call()"));
       message_length = json_cmdline_call(&message, msgBufSz);
-      DEBUG_TRACE(("called json_cmdline_call() = %ld", message_length));
+      DEBUG_TRACE(("called json_cmdline_call() = %zu", message_length));
       message[message_length]=0; // terminate
     }
     // start answer
@@ -945,7 +952,7 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
       conn,
       "%s" // no cache headers
       "Connection: %s\r\n"
-      "Content-Length: %ld\r\n"
+      "Content-Length: %zu\r\n"
       "Content-Type: %.*s\r\n\r\n",
       nocache_headers, // do NOT cache JSON responses
       suggest_connection_header(conn), // keep-alive or not
@@ -1009,7 +1016,7 @@ static void start_mongoose(int argc, char *argv[]) {
       "%s %s HTTP/1.1\r\n"
       "Host: %s\r\n"
       "Content-Type: %s; charset=UTF-8\r\n"
-      "Content-Length: %ld\r\n"
+      "Content-Length: %zu\r\n"
       "\r\n"
       "%s",
       argv[2], // method
