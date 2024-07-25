@@ -21,12 +21,16 @@ else
 mg44_DEBUG =
 endif
 
+if WITH_APPLICATION_VERSION
+mg44_VERSION = -DP44_APPLICATION_VERSION=\"$(APPLICATION_VERSION)\"
+endif
 
 
 mg44_CFLAGS = \
   -D MG_LEGACY_INTERFACE=1 \
   -I ${srcdir}/civetweb \
   ${mg44_DEBUG} \
+  ${mg44_VERSION} \
   ${PLATFORM_FLAGS} \
   ${JSONC_CFLAGS} \
   ${PTHREAD_CFLAGS}

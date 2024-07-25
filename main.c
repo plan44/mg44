@@ -146,7 +146,9 @@ static void die(const char *fmt, ...) {
 
 static void show_version(void) {
   fprintf(stderr, "mg44 v%s based on civetweb %s\n",
-    #if defined(PACKAGE_VERSION)
+    #if defined(P44_APPLICATION_VERSION)
+    P44_APPLICATION_VERSION, // explicit application version override
+    #elif defined(PACKAGE_VERSION)
     PACKAGE_VERSION, // automake package version number
     #else
     "????", // none known
@@ -330,7 +332,9 @@ static void process_command_line_arguments(char *argv[], char **options) {
 static void init_server_name(void) {
   snprintf(
     server_name, sizeof(server_name), "mg44 v%s based on civetweb v%s",
-    #if defined(PACKAGE_VERSION)
+    #if defined(P44_APPLICATION_VERSION)
+    P44_APPLICATION_VERSION, // explicit application version override
+    #elif defined(PACKAGE_VERSION)
     PACKAGE_VERSION, // automake package version number
     #else
     "????", // none known
@@ -454,11 +458,11 @@ extern char **environ;
 static size_t json_cmdline_call(char **messageBufP, size_t maxAnswerBytes)
 {
   size_t answerSize = 0;
-	int pid;
-	int answerPipe[2]; /* Child to parent pipe */
+  int pid;
+  int answerPipe[2]; /* Child to parent pipe */
 
-	// create a pipe
-	if(pipe(answerPipe)>=0) {
+  // create a pipe
+  if(pipe(answerPipe)>=0) {
     // fork the child
     pid = fork();
     switch(pid) {
