@@ -3419,6 +3419,15 @@ mg_fclose(struct mg_file_access *fileacc)
 #endif /* NO_FILESYSTEMS */
 
 
+size_t
+mg_strnncpy(char* dst, const char* src, size_t dstSz, size_t srcSz)
+{
+  if (srcSz>=dstSz) srcSz = dstSz-1;
+  strncpy(dst, src, srcSz); dst[srcSz] = 0;
+  return srcSz; /* actually copied string size */
+}
+
+
 static void
 mg_strlcpy(register char *dst, register const char *src, size_t n)
 {
@@ -8860,13 +8869,16 @@ mg_check_access_authentication(struct mg_connection *conn,
                                       const char *realm,
                                       const char *filename)
 {
+    DEBUG_TRACE("mg_check_access_authentication - conn=%p, realm=%s, filename=%s", conn, realm ? realm : "<null>", filename ? filename : "<null");
     struct mg_file file = STRUCT_FILE_INITIALIZER;
     int auth;
 
     if (!conn || !filename) {
+        DEBUG_TRACE("no conn or no filename");
         return -1;
     }
     if (!mg_fopen(conn, filename, MG_FOPEN_MODE_READ, &file)) {
+        DEBUG_TRACE("error opening auth file");
         return -2;
     }
 

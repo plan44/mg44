@@ -1508,6 +1508,8 @@ CIVETWEB_API void mg_cry(const struct mg_connection *conn,
 /* utility methods to compare two buffers, case insensitive. */
 CIVETWEB_API int mg_strcasecmp(const char *s1, const char *s2);
 CIVETWEB_API int mg_strncasecmp(const char *s1, const char *s2, size_t len);
+/* strncpy copying only a limited amount from src but still adds terminator */
+CIVETWEB_API size_t mg_strnncpy(char* dst, const char* src, size_t dstSz, size_t srcSz);
 
 
 /* Connect to a websocket as a client

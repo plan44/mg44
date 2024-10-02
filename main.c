@@ -582,24 +582,27 @@ static int authorization_handler(struct mg_connection *conn, void *cbdata)
         de = strchr(af, '@');
         if (de && de<se) {
           // domain specified
-          strncpy(dmn, af, de-af<MAX_API_OPT_CHARS ? de-af : MAX_API_OPT_CHARS);
+          mg_strnncpy(dmn, af, MAX_API_OPT_CHARS, de-af);
           af = de+1; // skip @
           de = dmn; // domain name
         }
         else {
           de = NULL; // default domain
         }
-        strncpy(afn, af, se-af<MAX_API_OPT_CHARS ? se-af : MAX_API_OPT_CHARS);
+        mg_strnncpy(afn, af, MAX_API_OPT_CHARS, se-af);
         // check via given authfile path (and nothing else)
         authres = mg_check_access_authentication(conn, de, afn);
+        DEBUG_TRACE("authres=%d", authres);
         if (authres>0) {
           DEBUG_TRACE("- AUTHORIZED via auth file");
           return 1; // authorized
         }
         else if (authres==0) {
           // not authorized, but authorizable (auth file exists, params ok) -> request authorization
-          mg_send_digest_access_authentication_request(conn, de);
           DEBUG_TRACE("- authorizable, send auth request");
+          if (mg_send_digest_access_authentication_request(conn, de)!=0) {
+            DEBUG_TRACE("- ERROR sending auth request");
+          }
         }
         DEBUG_TRACE("- not (yet?) authorized");
         return 0; // not authorized, end request here
