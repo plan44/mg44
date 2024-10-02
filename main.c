@@ -59,29 +59,6 @@
 
 #include <time.h>
 #include <pthread.h>
-// copied block from mongoose.c to allow debug traces in main
-#ifdef DEBUG_TRACE
-#undef DEBUG_TRACE
-#define DEBUG_TRACE(x)
-#else
-#if defined(DEBUG)
-#define DEBUG_TRACE(x) do { \
-  flockfile(stdout); \
-  printf("*** %lu.%p.%s.%d: ", \
-         (unsigned long) time(NULL), (void *) pthread_self(), \
-         __func__, __LINE__); \
-  printf x; \
-  putchar('\n'); \
-  fflush(stdout); \
-  funlockfile(stdout); \
-} while (0)
-#else
-#define DEBUG_TRACE(x)
-#endif // DEBUG
-#endif // DEBUG_TRACE
-
-
-
 
 #define DIRSEP '/'
 
@@ -380,7 +357,7 @@ int connectSocket(const char *aHost, const char *aServiceOrPort)
         }
         else {
           // error
-          DEBUG_TRACE(("Socket connect() failed despite valid address: %s", strerror(errno)));
+          DEBUG_TRACE("Socket connect() failed despite valid address: %s", strerror(errno));
           close(socketFD);
           socketFD = -1;
         }
@@ -402,9 +379,9 @@ static size_t json_api_call(char **messageBufP, size_t maxAnswerBytes)
   int done;
   int isJson = 1; // assume JSON
   char *p;
-  DEBUG_TRACE(("- entered json_api_call"));
+  DEBUG_TRACE("- entered json_api_call");
   int fd = connectSocket(jsonApiHost, jsonApiService);
-  DEBUG_TRACE(("- connectSocket returns fd=%d", fd));
+  DEBUG_TRACE("- connectSocket returns fd=%d", fd);
   if (fd>=0) {
     // write
     write(fd, *messageBufP, strlen(*messageBufP));
@@ -418,7 +395,7 @@ static size_t json_api_call(char **messageBufP, size_t maxAnswerBytes)
       }
       p = *messageBufP+answerSize;
       res = read(fd, p, maxAnswerBytes-answerSize);
-      DEBUG_TRACE(("- read: res=%zu, maxAnswerBytes=%zu, answerSize=%zu", res, maxAnswerBytes, answerSize));
+      DEBUG_TRACE("- read: res=%zu, maxAnswerBytes=%zu, answerSize=%zu", res, maxAnswerBytes, answerSize);
       if (answerSize==0 && res>0 && (uint8_t)p[0]>=0x80)
         isJson=0; // first byte not ASCII -> can't be JSON
       if (res>0) {
@@ -447,7 +424,7 @@ static size_t json_api_call(char **messageBufP, size_t maxAnswerBytes)
     close(fd);
   }
   else {
-    DEBUG_TRACE(("Error: could not open JSON API socket: %s", strerror(errno)));
+    DEBUG_TRACE("Error: could not open JSON API socket: %s", strerror(errno));
   }
   return answerSize;
 }
@@ -549,7 +526,7 @@ static void request_csrf_token(struct mg_connection *conn)
 
 static void upload_occurred(struct mg_connection *conn, const char *file_name)
 {
-  DEBUG_TRACE(("uploaded occured, file = %s", lastUploadedFilePath));
+  DEBUG_TRACE("uploaded occured, file = %s", lastUploadedFilePath);
   strncpy(lastUploadedFilePath, file_name, MAX_UPLOAD_PATH_LENGTH-1);
 }
 
@@ -573,7 +550,7 @@ static int authorization_handler(struct mg_connection *conn, void *cbdata)
   // - specifying no auth file allows accessing the path(s) w/o any auth
   // - specifying no domain/realm uses the global auth domain/realm
   const char* p = extraAuth;
-  DEBUG_TRACE(("path='%s', extraAuth='%s'", path, extraAuth));
+  DEBUG_TRACE("path='%s', extraAuth='%s'", path, extraAuth);
   const char* af = NULL;
   const char* de = NULL;
   const char* pe = NULL;
@@ -587,7 +564,7 @@ static int authorization_handler(struct mg_connection *conn, void *cbdata)
     // limit spec
     se = strchr(p, ',');
     if (!se) se = p+strlen(p);
-    DEBUG_TRACE(("extra_auth spec[%zd]='%.*s'", se-p, (int)(se-p), p));
+    DEBUG_TRACE("extra_auth spec[%zd]='%.*s'", se-p, (int)(se-p), p);
     // limit path
     pe = strchr(p, ':');
     if (!pe || pe>se) pe = strchr(p, '=');
@@ -596,7 +573,7 @@ static int authorization_handler(struct mg_connection *conn, void *cbdata)
       wildcard = 1;
     }
     if (strncmp(path, p, wildcard ? pe-p-1 : strlen(path))==0) {
-      DEBUG_TRACE(("- spec path matches"));
+      DEBUG_TRACE("- spec path matches");
       // match, search path
       af = strchr(pe, '=');
       if (af && af<se) {
@@ -616,20 +593,20 @@ static int authorization_handler(struct mg_connection *conn, void *cbdata)
         // check via given authfile path (and nothing else)
         authres = mg_check_access_authentication(conn, de, afn);
         if (authres>0) {
-          DEBUG_TRACE(("- AUTHORIZED via auth file"));
+          DEBUG_TRACE("- AUTHORIZED via auth file");
           return 1; // authorized
         }
         else if (authres==0) {
           // not authorized, but authorizable (auth file exists, params ok) -> request authorization
-          DEBUG_TRACE(("- authorizable, send auth request"));
           mg_send_digest_access_authentication_request(conn, de);
+          DEBUG_TRACE("- authorizable, send auth request");
         }
-        DEBUG_TRACE(("- not (yet?) authorized"));
+        DEBUG_TRACE("- not (yet?) authorized");
         return 0; // not authorized, end request here
       }
       else {
         // no '=authfile' means NO authentication required here
-        DEBUG_TRACE(("- accessible w/o auth"));
+        DEBUG_TRACE("- accessible w/o auth");
         return 1; // authorized
       }
       break;
@@ -648,13 +625,13 @@ static int authorization_handler(struct mg_connection *conn, void *cbdata)
     }
   }
   // fall back to standard civetweb check (.htpasswd, global passwd file)
-  DEBUG_TRACE(("not in any extra_auth scope, checking global auth"));
+  DEBUG_TRACE("not in any extra_auth scope, checking global auth");
   if (!mg_check_path_authorization(conn, path)) {
     mg_send_digest_access_authentication_request(conn, NULL);
-    DEBUG_TRACE(("- not (yet?) authorized"));
+    DEBUG_TRACE("- not (yet?) authorized");
     return 0; // not authorized, end request here
   }
-  DEBUG_TRACE(("- authorized via global auth"));
+  DEBUG_TRACE("- authorized via global auth");
   return 1; // authorized
 }
 
@@ -838,7 +815,7 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
         if (numfiles>=1) {
           // pass last uploaded file name with JSON query
           message_length += snprintf(message+message_length, msgBufSz-message_length, ", \"uploadedfile\": \"%s\"", lastUploadedFilePath);
-          DEBUG_TRACE(("uploaded %d files, last uploaded = %s", numfiles, lastUploadedFilePath));
+          DEBUG_TRACE("uploaded %d files, last uploaded = %s", numfiles, lastUploadedFilePath);
         }
         lastUploadedFilePath[0]=0;
       }
@@ -874,26 +851,26 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
     }
     // end of JSON object + LF
     message_length += snprintf(message+message_length, msgBufSz-message_length," }\n");
-    DEBUG_TRACE(("request json = %s", message));
+    DEBUG_TRACE("request json = %s", message);
     // abort call if csrf token is not ok
     if (csrfValPending) {
       // abort
-      DEBUG_TRACE(("csrf token does not match"));
+      DEBUG_TRACE("csrf token does not match");
       free(message); message = NULL;
       mg_printf(conn, "HTTP/1.0 403 Forbidden\r\n%s\r\n<html><body><h1>forbidden</h1></body></html>", nocache_headers);
       return 1; // request handled
     }
     else if (apiCall) {
       // send json request, receive answer
-      DEBUG_TRACE(("calling json_api_call()"));
+      DEBUG_TRACE("calling json_api_call()");
       message_length = json_api_call(&message, msgBufSz);
-      DEBUG_TRACE(("called json_api_call() = %zu", message_length));
+      DEBUG_TRACE("called json_api_call() = %zu", message_length);
       message[message_length]=0; // terminate
     }
     else if (cmdlineCall) {
-      DEBUG_TRACE(("calling json_cmdline_call()"));
+      DEBUG_TRACE("calling json_cmdline_call()");
       message_length = json_cmdline_call(&message, msgBufSz);
-      DEBUG_TRACE(("called json_cmdline_call() = %zu", message_length));
+      DEBUG_TRACE("called json_cmdline_call() = %zu", message_length);
       message[message_length]=0; // terminate
     }
     // start answer
@@ -911,7 +888,7 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
       (uint8_t)message[3]==0x47
     ) {
       // is PNG
-      DEBUG_TRACE(("detected PNG answer from socket API"));
+      DEBUG_TRACE("detected PNG answer from socket API");
       contentType = "image/png";
       contentType_len = (int)strlen(contentType);
     }
@@ -923,14 +900,14 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
           // ctrl-C for "content type"
           contentType = &message[++i];
           while (i<message_length && message[i++]>=0x20) contentType_len++;
-          DEBUG_TRACE(("detected custom content type (^C): %.*s", contentType_len, contentType));
+          DEBUG_TRACE("detected custom content type (^C): %.*s", contentType_len, contentType);
         }
         else if (message[i]==0x08) {
           // ctrl-H for header line as-is
           i++;
           int n = 0;
           while (i+n<message_length && message[i+n]>=0x20) n++;
-          DEBUG_TRACE(("detected custom header line (^H): %.*s", n, &message[i]));
+          DEBUG_TRACE("detected custom header line (^H): %.*s", n, &message[i]);
           mg_printf(conn, "%.*s\r\n", n, &message[i]);
           i+=n;
         }
@@ -948,7 +925,7 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
     }
     if (contentType_len==0) {
       // assume JSON
-      DEBUG_TRACE(("assuming content type json for response from socket API"));
+      DEBUG_TRACE("assuming content type json for response from socket API");
       contentType = "application/json";
       contentType_len = (int)strlen(contentType);
     }
@@ -962,7 +939,7 @@ static int request_handler(struct mg_connection *conn, void *cbdata)
       suggest_connection_header(conn), // keep-alive or not
       message_length, contentType_len, contentType
     );
-    DEBUG_TRACE(("response body = %.*s", (int)message_length, msgP));
+    DEBUG_TRACE("response body = %.*s", (int)message_length, msgP);
     mg_write(conn, msgP, message_length);
     // done
     free(message); message = NULL;
