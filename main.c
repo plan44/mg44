@@ -491,13 +491,16 @@ static size_t json_cmdline_call(char **messageBufP, size_t maxAnswerBytes)
 static void get_csrf_token(struct mg_connection *conn, char *tok)
 {
   const char *remote = mg_get_request_info(conn)->remote_addr;
+  //const char *user = mg_get_request_info(conn)->remote_user ? mg_get_request_info(conn)->remote_user : "anonymous";
+  const char *user = "irrelevant"; // when we have APIs accessed with and without auth headers, user might be different, so don't include it
   mg_md5(
     tok, // will get MD5 token
-    mg_get_request_info(conn)->remote_user ? mg_get_request_info(conn)->remote_user : "anonymous", // user
+    user, // user
     remote, // remote party
     csrf_token_seed, // random ID unique to this mg44 instance
     NULL // terminator
   );
+  DEBUG_TRACE("get_csrf_token for conn=%p, user=%s: %s", conn, user, tok);
 }
 
 
