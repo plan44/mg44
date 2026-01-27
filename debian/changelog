@@ -1,5 +1,9 @@
-mg44 (3.12-1) UNRELEASED; urgency=medium
+mg44 (3.14-2) UNRELEASED; urgency=medium
 
+  [ luz@plan44.ch ]
   * Initial release.
 
- --  <luz@plan44.ch>  Fri, 06 Jan 2023 17:35:21 +0100
+  [ luz@plan44.ch ]
+  * update to v3.14
+
+ --  <luz@plan44.ch>  Tue, 27 Jan 2026 18:30:00 +0100
